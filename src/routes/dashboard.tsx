@@ -125,7 +125,7 @@ function Dashboard() {
     const id = setInterval(() => {
       setProgress((p) => {
         if (p + 1 >= track.duration) {
-          setTrackIdx((i) => (i + 1) % TRACKS.length);
+          setTrackIdx((i) => (i + 1) % tracks.length);
           return 0;
         }
         return p + 1;
@@ -167,8 +167,8 @@ function Dashboard() {
         roomStyle={roomStyle}
         onExit={() => setFocus(false)}
         onToggle={() => setPlaying((p) => !p)}
-        onPrev={() => setTrackIdx((i) => (i - 1 + TRACKS.length) % TRACKS.length)}
-        onNext={() => setTrackIdx((i) => (i + 1) % TRACKS.length)}
+        onPrev={() => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length)}
+        onNext={() => setTrackIdx((i) => (i + 1) % tracks.length)}
         onScrub={(s) => setProgress(s)}
       />
     );
@@ -298,8 +298,8 @@ function Dashboard() {
             pct={pct}
             fmt={fmt}
             onToggle={() => setPlaying((p) => !p)}
-            onPrev={() => setTrackIdx((i) => (i - 1 + TRACKS.length) % TRACKS.length)}
-            onNext={() => setTrackIdx((i) => (i + 1) % TRACKS.length)}
+            onPrev={() => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length)}
+            onNext={() => setTrackIdx((i) => (i + 1) % tracks.length)}
             onScrub={(s) => setProgress(s)}
           />
 
@@ -358,7 +358,7 @@ function Dashboard() {
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-muted/40 backdrop-blur-sm border-x border-border" />
                 <h4 className="text-sm font-medium text-foreground mb-3 font-serif">Late Shift Essentials</h4>
                 <ul className="text-xs text-muted-foreground space-y-2">
-                  {TRACKS.slice(0, 4).map((t) => (
+                  {tracks.slice(0, 4).map((t) => (
                     <li key={t.id} className="flex items-center gap-2">
                       <span className="size-1 rounded-full" style={{ background: t.accent }} />
                       <span className="truncate">
@@ -375,7 +375,7 @@ function Dashboard() {
           <div>
             <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">Collection</h3>
             <div className="flex gap-4 overflow-x-auto pb-3 no-scrollbar">
-              {TRACKS.map((t, i) => {
+              {tracks.map((t, i) => {
                 const active = i === trackIdx;
                 return (
                   <button
