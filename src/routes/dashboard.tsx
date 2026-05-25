@@ -196,6 +196,49 @@ function Dashboard() {
             </div>
           </div>
 
+          {/* Spotify connection pill */}
+          {connected ? (
+            <div className="flex items-center gap-3 p-2 pr-3 rounded-full bg-card/60 ring-1 ring-border">
+              {profile?.images?.[0]?.url ? (
+                <img
+                  src={profile.images[0].url}
+                  alt={profile.display_name}
+                  className="size-7 rounded-full object-cover"
+                />
+              ) : (
+                <span className="size-7 rounded-full bg-accent/30 grid place-items-center text-[10px]">
+                  {(profile?.display_name ?? "?").slice(0, 1)}
+                </span>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] truncate text-foreground">
+                  {profile?.display_name ?? "Connected"}
+                </p>
+                <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">
+                  {profile?.product === "premium" ? "Premium" : "Spotify"}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  logoutSpotify();
+                  window.location.reload();
+                }}
+                aria-label="Log out"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <LogOut className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => beginSpotifyLogin()}
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-full bg-primary text-primary-foreground text-xs font-medium shadow-[0_8px_30px_-10px_var(--glow)] hover:scale-[1.02] transition-transform"
+            >
+              Connect Spotify
+            </button>
+          )}
+
+
           <div className="space-y-3">
             <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
               Mood Rooms
