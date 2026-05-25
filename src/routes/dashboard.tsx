@@ -11,9 +11,19 @@ import {
   Maximize2,
   Minimize2,
   ArrowLeft,
+  LogOut,
 } from "lucide-react";
 import { TRACKS, type Track } from "@/lib/tracks";
 import polaroidRain from "@/assets/polaroid-rain.jpg";
+import {
+  beginSpotifyLogin,
+  getProfile,
+  getTopTracks,
+  isSpotifyConnected,
+  logoutSpotify,
+  type SpotifyProfile,
+  type SpotifyTrack,
+} from "@/lib/spotify";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -31,7 +41,39 @@ const MOODS = [
   { id: "attic", name: "Vinyl Attic", weather: "Dust drifting in lamplight", temp: "18°C", city: "Berlin" },
 ];
 
+// Rotating accent palette for real Spotify tracks (no audio analysis needed)
+const ACCENTS = [
+  "oklch(0.78 0.18 10)",
+  "oklch(0.82 0.17 35)",
+  "oklch(0.72 0.18 280)",
+  "oklch(0.7 0.18 235)",
+  "oklch(0.8 0.18 55)",
+  "oklch(0.74 0.18 330)",
+  "oklch(0.76 0.16 150)",
+];
+
+const PLACEHOLDER_LYRICS = [
+  "The night hums quietly in the background",
+  "Every note feels like a soft window opening",
+  "Somewhere a city is falling asleep",
+  "And the chord progression remembers you",
+];
+
+function spotifyToTrack(t: SpotifyTrack, i: number): Track {
+  return {
+    id: t.id,
+    title: t.name,
+    artist: t.artists.map((a) => a.name).join(", "),
+    album: t.album.name,
+    art: t.album.images[0]?.url ?? "",
+    duration: Math.round(t.duration_ms / 1000),
+    accent: ACCENTS[i % ACCENTS.length],
+    lyrics: PLACEHOLDER_LYRICS,
+  };
+}
+
 function Dashboard() {
+  const [tracks, setTracks] = useState<Track[]>(TRACKS);
   const [trackIdx, setTrackIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [progress, setProgress] = useState(82);
@@ -40,9 +82,33 @@ function Dashboard() {
   const [liked, setLiked] = useState(false);
   const [focus, setFocus] = useState(false);
   const [mood, setMood] = useState("shinjuku");
+  const [profile, setProfile] = useState<SpotifyProfile | null>(null);
+  const [connected, setConnected] = useState(false);
 
-  const track: Track = TRACKS[trackIdx];
+  const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
+
+  // Load Spotify data once on mount if a session exists.
+  useEffect(() => {
+    if (!isSpotifyConnected()) return;
+    setConnected(true);
+    (async () => {
+      try {
+        const [p, top] = await Promise.all([getProfile(), getTopTracks(12)]);
+        setProfile(p);
+        if (top.items.length) {
+          setTracks(top.items.map(spotifyToTrack));
+          setTrackIdx(0);
+          setProgress(0);
+        }
+      } catch (e) {
+        console.error("Spotify load failed", e);
+        logoutSpotify();
+        setConnected(false);
+      }
+    })();
+  }, []);
+
 
   // accent style — drives whole-room color shift
   const roomStyle = useMemo(
@@ -59,7 +125,7 @@ function Dashboard() {
     const id = setInterval(() => {
       setProgress((p) => {
         if (p + 1 >= track.duration) {
-          setTrackIdx((i) => (i + 1) % TRACKS.length);
+          setTrackIdx((i) => (i + 1) % tracks.length);
           return 0;
         }
         return p + 1;
@@ -101,8 +167,8 @@ function Dashboard() {
         roomStyle={roomStyle}
         onExit={() => setFocus(false)}
         onToggle={() => setPlaying((p) => !p)}
-        onPrev={() => setTrackIdx((i) => (i - 1 + TRACKS.length) % TRACKS.length)}
-        onNext={() => setTrackIdx((i) => (i + 1) % TRACKS.length)}
+        onPrev={() => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length)}
+        onNext={() => setTrackIdx((i) => (i + 1) % tracks.length)}
         onScrub={(s) => setProgress(s)}
       />
     );
@@ -129,6 +195,49 @@ function Dashboard() {
               </h1>
             </div>
           </div>
+
+          {/* Spotify connection pill */}
+          {connected ? (
+            <div className="flex items-center gap-3 p-2 pr-3 rounded-full bg-card/60 ring-1 ring-border">
+              {profile?.images?.[0]?.url ? (
+                <img
+                  src={profile.images[0].url}
+                  alt={profile.display_name}
+                  className="size-7 rounded-full object-cover"
+                />
+              ) : (
+                <span className="size-7 rounded-full bg-accent/30 grid place-items-center text-[10px]">
+                  {(profile?.display_name ?? "?").slice(0, 1)}
+                </span>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] truncate text-foreground">
+                  {profile?.display_name ?? "Connected"}
+                </p>
+                <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">
+                  {profile?.product === "premium" ? "Premium" : "Spotify"}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  logoutSpotify();
+                  window.location.reload();
+                }}
+                aria-label="Log out"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <LogOut className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => beginSpotifyLogin()}
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-full bg-primary text-primary-foreground text-xs font-medium shadow-[0_8px_30px_-10px_var(--glow)] hover:scale-[1.02] transition-transform"
+            >
+              Connect Spotify
+            </button>
+          )}
+
 
           <div className="space-y-3">
             <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
@@ -232,8 +341,8 @@ function Dashboard() {
             pct={pct}
             fmt={fmt}
             onToggle={() => setPlaying((p) => !p)}
-            onPrev={() => setTrackIdx((i) => (i - 1 + TRACKS.length) % TRACKS.length)}
-            onNext={() => setTrackIdx((i) => (i + 1) % TRACKS.length)}
+            onPrev={() => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length)}
+            onNext={() => setTrackIdx((i) => (i + 1) % tracks.length)}
             onScrub={(s) => setProgress(s)}
           />
 
@@ -292,7 +401,7 @@ function Dashboard() {
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-muted/40 backdrop-blur-sm border-x border-border" />
                 <h4 className="text-sm font-medium text-foreground mb-3 font-serif">Late Shift Essentials</h4>
                 <ul className="text-xs text-muted-foreground space-y-2">
-                  {TRACKS.slice(0, 4).map((t) => (
+                  {tracks.slice(0, 4).map((t) => (
                     <li key={t.id} className="flex items-center gap-2">
                       <span className="size-1 rounded-full" style={{ background: t.accent }} />
                       <span className="truncate">
@@ -309,7 +418,7 @@ function Dashboard() {
           <div>
             <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">Collection</h3>
             <div className="flex gap-4 overflow-x-auto pb-3 no-scrollbar">
-              {TRACKS.map((t, i) => {
+              {tracks.map((t, i) => {
                 const active = i === trackIdx;
                 return (
                   <button

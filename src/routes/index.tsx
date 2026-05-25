@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Music, Headphones } from "lucide-react";
+import { beginSpotifyLogin } from "@/lib/spotify";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -121,13 +123,13 @@ function Landing() {
           </p>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3 items-center justify-center">
-            <Link
-              to="/dashboard"
+            <button
+              onClick={() => beginSpotifyLogin()}
               className="group inline-flex items-center gap-3 px-6 py-3 rounded-full bg-primary text-primary-foreground font-medium text-sm shadow-[0_8px_40px_-8px_var(--glow)] hover:scale-[1.03] transition-transform"
             >
               <Music className="size-4" />
               Continue with Spotify
-            </Link>
+            </button>
             <Link
               to="/dashboard"
               className="inline-flex items-center gap-2 px-5 py-3 rounded-full ring-1 ring-border text-sm text-muted-foreground hover:text-foreground hover:bg-card/60 transition-colors"
@@ -137,9 +139,10 @@ function Landing() {
             </Link>
           </div>
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
-            Demo mode · no account needed
+            Real Spotify login · PKCE · no password stored
           </p>
         </div>
+
 
         {/* Rooms preview */}
         <section id="rooms" className="mt-32 w-full">
