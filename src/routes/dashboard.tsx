@@ -11,9 +11,19 @@ import {
   Maximize2,
   Minimize2,
   ArrowLeft,
+  LogOut,
 } from "lucide-react";
 import { TRACKS, type Track } from "@/lib/tracks";
 import polaroidRain from "@/assets/polaroid-rain.jpg";
+import {
+  beginSpotifyLogin,
+  getProfile,
+  getTopTracks,
+  isSpotifyConnected,
+  logoutSpotify,
+  type SpotifyProfile,
+  type SpotifyTrack,
+} from "@/lib/spotify";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -31,7 +41,39 @@ const MOODS = [
   { id: "attic", name: "Vinyl Attic", weather: "Dust drifting in lamplight", temp: "18°C", city: "Berlin" },
 ];
 
+// Rotating accent palette for real Spotify tracks (no audio analysis needed)
+const ACCENTS = [
+  "oklch(0.78 0.18 10)",
+  "oklch(0.82 0.17 35)",
+  "oklch(0.72 0.18 280)",
+  "oklch(0.7 0.18 235)",
+  "oklch(0.8 0.18 55)",
+  "oklch(0.74 0.18 330)",
+  "oklch(0.76 0.16 150)",
+];
+
+const PLACEHOLDER_LYRICS = [
+  "The night hums quietly in the background",
+  "Every note feels like a soft window opening",
+  "Somewhere a city is falling asleep",
+  "And the chord progression remembers you",
+];
+
+function spotifyToTrack(t: SpotifyTrack, i: number): Track {
+  return {
+    id: t.id,
+    title: t.name,
+    artist: t.artists.map((a) => a.name).join(", "),
+    album: t.album.name,
+    art: t.album.images[0]?.url ?? "",
+    duration: Math.round(t.duration_ms / 1000),
+    accent: ACCENTS[i % ACCENTS.length],
+    lyrics: PLACEHOLDER_LYRICS,
+  };
+}
+
 function Dashboard() {
+  const [tracks, setTracks] = useState<Track[]>(TRACKS);
   const [trackIdx, setTrackIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [progress, setProgress] = useState(82);
@@ -40,9 +82,33 @@ function Dashboard() {
   const [liked, setLiked] = useState(false);
   const [focus, setFocus] = useState(false);
   const [mood, setMood] = useState("shinjuku");
+  const [profile, setProfile] = useState<SpotifyProfile | null>(null);
+  const [connected, setConnected] = useState(false);
 
-  const track: Track = TRACKS[trackIdx];
+  const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
+
+  // Load Spotify data once on mount if a session exists.
+  useEffect(() => {
+    if (!isSpotifyConnected()) return;
+    setConnected(true);
+    (async () => {
+      try {
+        const [p, top] = await Promise.all([getProfile(), getTopTracks(12)]);
+        setProfile(p);
+        if (top.items.length) {
+          setTracks(top.items.map(spotifyToTrack));
+          setTrackIdx(0);
+          setProgress(0);
+        }
+      } catch (e) {
+        console.error("Spotify load failed", e);
+        logoutSpotify();
+        setConnected(false);
+      }
+    })();
+  }, []);
+
 
   // accent style — drives whole-room color shift
   const roomStyle = useMemo(
