@@ -191,6 +191,7 @@ export type SpotifyTrack = {
   name: string;
   uri: string;
   duration_ms: number;
+  preview_url: string | null;
   artists: { name: string }[];
   album: { name: string; images: { url: string; width: number; height: number }[] };
 };
@@ -205,4 +206,9 @@ export const getTopTracks = (limit = 12) =>
 export const getRecentlyPlayed = (limit = 12) =>
   spotifyFetch<{ items: { track: SpotifyTrack }[] }>(
     `/me/player/recently-played?limit=${limit}`,
+  );
+
+export const searchTracks = (q: string, limit = 12) =>
+  spotifyFetch<{ tracks: { items: SpotifyTrack[] } }>(
+    `/search?type=track&limit=${limit}&q=${encodeURIComponent(q)}`,
   );
