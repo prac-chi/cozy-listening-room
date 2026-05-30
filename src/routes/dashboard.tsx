@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Play,
   Pause,
@@ -12,6 +12,10 @@ import {
   Minimize2,
   ArrowLeft,
   LogOut,
+  Volume2,
+  VolumeX,
+  Search,
+  X,
 } from "lucide-react";
 import { TRACKS, type Track } from "@/lib/tracks";
 import polaroidRain from "@/assets/polaroid-rain.jpg";
@@ -21,9 +25,11 @@ import {
   getTopTracks,
   isSpotifyConnected,
   logoutSpotify,
+  searchTracks,
   type SpotifyProfile,
   type SpotifyTrack,
 } from "@/lib/spotify";
+import { fetchLyrics } from "@/lib/lyrics";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -41,7 +47,6 @@ const MOODS = [
   { id: "attic", name: "Vinyl Attic", weather: "Dust drifting in lamplight", temp: "18°C", city: "Berlin" },
 ];
 
-// Rotating accent palette for real Spotify tracks (no audio analysis needed)
 const ACCENTS = [
   "oklch(0.78 0.18 10)",
   "oklch(0.82 0.17 35)",
@@ -52,10 +57,10 @@ const ACCENTS = [
   "oklch(0.76 0.16 150)",
 ];
 
-const PLACEHOLDER_LYRICS = [
+const FALLBACK_LYRICS = [
+  "(Lyrics for this song aren't available right now)",
   "The night hums quietly in the background",
   "Every note feels like a soft window opening",
-  "Somewhere a city is falling asleep",
   "And the chord progression remembers you",
 ];
 
@@ -68,27 +73,36 @@ function spotifyToTrack(t: SpotifyTrack, i: number): Track {
     art: t.album.images[0]?.url ?? "",
     duration: Math.round(t.duration_ms / 1000),
     accent: ACCENTS[i % ACCENTS.length],
-    lyrics: PLACEHOLDER_LYRICS,
+    lyrics: FALLBACK_LYRICS,
+    previewUrl: t.preview_url,
   };
 }
 
 function Dashboard() {
   const [tracks, setTracks] = useState<Track[]>(TRACKS);
   const [trackIdx, setTrackIdx] = useState(0);
-  const [playing, setPlaying] = useState(true);
-  const [progress, setProgress] = useState(82);
-  const [lyricIdx, setLyricIdx] = useState(1);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [lyrics, setLyrics] = useState<string[]>(FALLBACK_LYRICS);
+  const [lyricIdx, setLyricIdx] = useState(0);
   const [clock, setClock] = useState("22:45");
   const [liked, setLiked] = useState(false);
   const [focus, setFocus] = useState(false);
   const [mood, setMood] = useState("shinjuku");
   const [profile, setProfile] = useState<SpotifyProfile | null>(null);
   const [connected, setConnected] = useState(false);
+  const [volume, setVolume] = useState(0.7);
+  const [muted, setMuted] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState<Track[]>([]);
+  const [searching, setSearching] = useState(false);
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
-  // Load Spotify data once on mount if a session exists.
+  // Spotify boot
   useEffect(() => {
     if (!isSpotifyConnected()) return;
     setConnected(true);
@@ -109,36 +123,59 @@ function Dashboard() {
     })();
   }, []);
 
-
-  // accent style — drives whole-room color shift
-  const roomStyle = useMemo(
-    () =>
-      ({
-        ["--accent" as string]: track.accent,
-        ["--glow" as string]: `color-mix(in oklab, ${track.accent} 55%, transparent)`,
-      }) as React.CSSProperties,
-    [track.accent],
-  );
-
+  // Real lyrics fetch on track change
   useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => {
-      setProgress((p) => {
-        if (p + 1 >= track.duration) {
-          setTrackIdx((i) => (i + 1) % tracks.length);
-          return 0;
-        }
-        return p + 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [playing, track.duration]);
+    let cancelled = false;
+    setLyricIdx(0);
+    setLyrics(["Loading lyrics…"]);
+    fetchLyrics(track.artist, track.title).then((l) => {
+      if (cancelled) return;
+      setLyrics(l && l.length ? l : FALLBACK_LYRICS);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [track.id, track.artist, track.title]);
 
+  // Audio element: load new src on track change
   useEffect(() => {
-    const id = setInterval(() => setLyricIdx((i) => (i + 1) % track.lyrics.length), 4200);
-    return () => clearInterval(id);
-  }, [track.lyrics.length]);
+    const a = audioRef.current;
+    if (!a) return;
+    setProgress(0);
+    if (track.previewUrl) {
+      a.src = track.previewUrl;
+      a.load();
+      if (playing) a.play().catch(() => setPlaying(false));
+    } else {
+      a.removeAttribute("src");
+      a.load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track.id]);
 
+  // Play/pause sync
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing && track.previewUrl) a.play().catch(() => setPlaying(false));
+    else a.pause();
+  }, [playing, track.previewUrl]);
+
+  // Volume sync
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.volume = muted ? 0 : volume;
+  }, [volume, muted]);
+
+  // Lyric ticker
+  useEffect(() => {
+    if (!lyrics.length) return;
+    const id = setInterval(() => setLyricIdx((i) => (i + 1) % lyrics.length), 4200);
+    return () => clearInterval(id);
+  }, [lyrics.length]);
+
+  // Clock
   useEffect(() => {
     const tick = () => {
       const d = new Date();
@@ -149,33 +186,122 @@ function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
-  // reset progress when switching track
-  useEffect(() => setProgress(0), [trackIdx]);
+  // Audio time → progress
+  const onTimeUpdate = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    setProgress(Math.floor(a.currentTime));
+  };
+  const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
 
+  // Search
+  useEffect(() => {
+    if (!connected || !searchOpen) return;
+    const q = searchQ.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    const id = setTimeout(async () => {
+      try {
+        const r = await searchTracks(q, 12);
+        setSearchResults(r.tracks.items.map(spotifyToTrack));
+      } catch (e) {
+        console.error("Search failed", e);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(id);
+  }, [searchQ, connected, searchOpen]);
+
+  const playSearchResult = (t: Track) => {
+    // Insert/replace at current index so the collection still flows
+    setTracks((prev) => {
+      const exists = prev.findIndex((x) => x.id === t.id);
+      if (exists >= 0) {
+        setTrackIdx(exists);
+        return prev;
+      }
+      const next = [t, ...prev];
+      setTrackIdx(0);
+      return next;
+    });
+    setPlaying(true);
+    setSearchOpen(false);
+    setSearchQ("");
+  };
+
+  const roomStyle = useMemo(
+    () =>
+      ({
+        ["--accent" as string]: track.accent,
+        ["--glow" as string]: `color-mix(in oklab, ${track.accent} 55%, transparent)`,
+      }) as React.CSSProperties,
+    [track.accent],
+  );
+
+  const duration = track.previewUrl ? 30 : track.duration; // Spotify previews = 30s
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  const pct = (progress / track.duration) * 100;
+  const pct = Math.min(100, (progress / Math.max(1, duration)) * 100);
+
+  const onScrub = (s: number) => {
+    setProgress(s);
+    const a = audioRef.current;
+    if (a && track.previewUrl) a.currentTime = s;
+  };
+
+  const controlsProps = {
+    playing,
+    progress,
+    duration,
+    pct,
+    fmt,
+    volume,
+    muted,
+    hasAudio: Boolean(track.previewUrl),
+    onToggle: () => setPlaying((p) => !p),
+    onPrev: () => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length),
+    onNext: () => setTrackIdx((i) => (i + 1) % tracks.length),
+    onScrub,
+    onVolume: (v: number) => {
+      setVolume(v);
+      if (v > 0) setMuted(false);
+    },
+    onMute: () => setMuted((m) => !m),
+  };
 
   if (focus) {
     return (
-      <FocusMode
-        track={track}
-        playing={playing}
-        progress={progress}
-        lyricIdx={lyricIdx}
-        pct={pct}
-        fmt={fmt}
-        roomStyle={roomStyle}
-        onExit={() => setFocus(false)}
-        onToggle={() => setPlaying((p) => !p)}
-        onPrev={() => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length)}
-        onNext={() => setTrackIdx((i) => (i + 1) % tracks.length)}
-        onScrub={(s) => setProgress(s)}
-      />
+      <>
+        <audio
+          ref={audioRef}
+          onTimeUpdate={onTimeUpdate}
+          onEnded={onEnded}
+          preload="auto"
+        />
+        <FocusMode
+          track={track}
+          lyrics={lyrics}
+          lyricIdx={lyricIdx}
+          roomStyle={roomStyle}
+          onExit={() => setFocus(false)}
+          controlsProps={controlsProps}
+        />
+      </>
     );
   }
 
   return (
     <div className="relative min-h-screen room-bg text-foreground overflow-hidden" style={roomStyle}>
+      <audio
+        ref={audioRef}
+        onTimeUpdate={onTimeUpdate}
+        onEnded={onEnded}
+        preload="auto"
+      />
       <div className="grain-overlay fixed inset-0 z-50" />
 
       <main className="relative z-10 mx-auto max-w-7xl px-6 lg:px-10 py-8 lg:py-12 grid grid-cols-12 gap-8 lg:gap-12 items-start">
@@ -196,7 +322,6 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Spotify connection pill */}
           {connected ? (
             <div className="flex items-center gap-3 p-2 pr-3 rounded-full bg-card/60 ring-1 ring-border">
               {profile?.images?.[0]?.url ? (
@@ -238,6 +363,16 @@ function Dashboard() {
             </button>
           )}
 
+          {/* Search button */}
+          {connected && (
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-card/60 ring-1 ring-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Search className="size-3.5" />
+              Search any song…
+            </button>
+          )}
 
           <div className="space-y-3">
             <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
@@ -314,8 +449,6 @@ function Dashboard() {
               aria-hidden
               className="absolute -right-2 top-2 w-7 h-44 rounded-full bg-zinc-700/70 blur-[2px] -rotate-12 pointer-events-none"
             />
-
-            {/* expand button */}
             <button
               onClick={() => setFocus(true)}
               aria-label="Focus mode"
@@ -332,34 +465,29 @@ function Dashboard() {
             <p className="text-muted-foreground text-base md:text-lg">
               {track.artist} — <span className="italic">{track.album}</span>
             </p>
+            {!track.previewUrl && (
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                No preview available for this track
+              </p>
+            )}
           </div>
 
-          <Controls
-            playing={playing}
-            progress={progress}
-            duration={track.duration}
-            pct={pct}
-            fmt={fmt}
-            onToggle={() => setPlaying((p) => !p)}
-            onPrev={() => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length)}
-            onNext={() => setTrackIdx((i) => (i + 1) % tracks.length)}
-            onScrub={(s) => setProgress(s)}
-          />
+          <Controls {...controlsProps} />
 
           {/* Floating lyrics */}
           <div className="mt-12 h-28 relative overflow-hidden w-full max-w-xl">
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-              <p className="text-muted-foreground/60 text-sm italic font-serif animate-lyric-float">
-                {track.lyrics[(lyricIdx - 1 + track.lyrics.length) % track.lyrics.length]}
+              <p className="text-muted-foreground/60 text-sm italic font-serif">
+                {lyrics[(lyricIdx - 1 + lyrics.length) % lyrics.length]}
               </p>
               <p
                 key={lyricIdx}
                 className="text-foreground text-lg md:text-xl font-serif transition-opacity duration-700"
               >
-                {track.lyrics[lyricIdx]}
+                {lyrics[lyricIdx]}
               </p>
               <p className="text-muted-foreground/40 text-sm italic font-serif">
-                {track.lyrics[(lyricIdx + 1) % track.lyrics.length]}
+                {lyrics[(lyricIdx + 1) % lyrics.length]}
               </p>
             </div>
           </div>
@@ -414,7 +542,6 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Vinyl shelf */}
           <div>
             <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">Collection</h3>
             <div className="flex gap-4 overflow-x-auto pb-3 no-scrollbar">
@@ -470,54 +597,100 @@ function Dashboard() {
           ))}
         </div>
       </footer>
+
+      {/* Search overlay */}
+      {searchOpen && (
+        <div className="fixed inset-0 z-[70] bg-background/85 backdrop-blur-xl flex items-start justify-center pt-24 px-6">
+          <div className="w-full max-w-2xl">
+            <div className="flex items-center gap-3 bg-card ring-1 ring-border rounded-full px-5 py-3">
+              <Search className="size-4 text-muted-foreground" />
+              <input
+                autoFocus
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Search Spotify — any song, artist, or album"
+                className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
+              />
+              <button onClick={() => setSearchOpen(false)} aria-label="Close search">
+                <X className="size-4 text-muted-foreground hover:text-foreground" />
+              </button>
+            </div>
+            <div className="mt-4 max-h-[60vh] overflow-y-auto space-y-1">
+              {searching && (
+                <p className="text-xs text-muted-foreground px-2 py-3">Searching…</p>
+              )}
+              {!searching && searchResults.length === 0 && searchQ && (
+                <p className="text-xs text-muted-foreground px-2 py-3">No matches.</p>
+              )}
+              {searchResults.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => playSearchResult(t)}
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 text-left"
+                >
+                  <img src={t.art} alt="" className="size-12 rounded object-cover" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-foreground truncate">{t.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {t.artist} · {t.album}
+                    </p>
+                  </div>
+                  {!t.previewUrl && (
+                    <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">
+                      no preview
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function Controls({
-  playing,
-  progress,
-  duration,
-  pct,
-  fmt,
-  onToggle,
-  onPrev,
-  onNext,
-  onScrub,
-}: {
+type ControlsProps = {
   playing: boolean;
   progress: number;
   duration: number;
   pct: number;
   fmt: (s: number) => string;
+  volume: number;
+  muted: boolean;
+  hasAudio: boolean;
   onToggle: () => void;
   onPrev: () => void;
   onNext: () => void;
   onScrub: (s: number) => void;
-}) {
+  onVolume: (v: number) => void;
+  onMute: () => void;
+};
+
+function Controls(p: ControlsProps) {
   return (
     <div className="mt-8 w-full max-w-md">
       <div
         role="slider"
         aria-label="Track progress"
         aria-valuemin={0}
-        aria-valuemax={duration}
-        aria-valuenow={progress}
+        aria-valuemax={p.duration}
+        aria-valuenow={p.progress}
         className="w-full h-1 bg-muted rounded-full overflow-hidden relative cursor-pointer"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           const x = e.clientX - r.left;
-          onScrub(Math.max(0, Math.min(duration, Math.round((x / r.width) * duration))));
+          p.onScrub(Math.max(0, Math.min(p.duration, Math.round((x / r.width) * p.duration))));
         }}
       >
         <div
           className="absolute inset-y-0 left-0 bg-accent shadow-[0_0_12px_var(--glow)] transition-[width] duration-300"
-          style={{ width: `${pct}%` }}
+          style={{ width: `${p.pct}%` }}
         />
       </div>
       <div className="mt-2 flex justify-between text-[10px] tabular-nums font-mono text-muted-foreground">
-        <span>{fmt(progress)}</span>
-        <span>{fmt(duration)}</span>
+        <span>{p.fmt(p.progress)}</span>
+        <span>{p.fmt(p.duration)}</span>
       </div>
 
       <div className="mt-6 flex justify-between items-center px-2">
@@ -527,17 +700,18 @@ function Controls({
         <div className="flex items-center gap-8">
           <button
             aria-label="Previous"
-            onClick={onPrev}
+            onClick={p.onPrev}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <SkipBack className="size-5" />
           </button>
           <button
-            aria-label={playing ? "Pause" : "Play"}
-            onClick={onToggle}
-            className="size-14 rounded-full bg-foreground text-background flex items-center justify-center ring-4 ring-foreground/10 hover:ring-foreground/20 transition-all hover:scale-[1.03]"
+            aria-label={p.playing ? "Pause" : "Play"}
+            onClick={p.onToggle}
+            disabled={!p.hasAudio}
+            className="size-14 rounded-full bg-foreground text-background flex items-center justify-center ring-4 ring-foreground/10 hover:ring-foreground/20 transition-all hover:scale-[1.03] disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {playing ? (
+            {p.playing ? (
               <Pause className="size-5" fill="currentColor" />
             ) : (
               <Play className="size-5 ml-0.5" fill="currentColor" />
@@ -545,7 +719,7 @@ function Controls({
           </button>
           <button
             aria-label="Next"
-            onClick={onNext}
+            onClick={p.onNext}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <SkipForward className="size-5" />
@@ -555,36 +729,48 @@ function Controls({
           <Repeat className="size-4" />
         </button>
       </div>
+
+      {/* Volume */}
+      <div className="mt-5 flex items-center gap-3 px-2">
+        <button
+          onClick={p.onMute}
+          aria-label={p.muted ? "Unmute" : "Mute"}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {p.muted || p.volume === 0 ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={p.muted ? 0 : p.volume}
+          onChange={(e) => p.onVolume(Number(e.target.value))}
+          aria-label="Volume"
+          className="flex-1 h-1 accent-[var(--accent)] cursor-pointer"
+        />
+        <span className="text-[10px] tabular-nums font-mono text-muted-foreground w-8 text-right">
+          {Math.round((p.muted ? 0 : p.volume) * 100)}
+        </span>
+      </div>
     </div>
   );
 }
 
 function FocusMode({
   track,
-  playing,
-  progress,
+  lyrics,
   lyricIdx,
-  pct,
-  fmt,
   roomStyle,
   onExit,
-  onToggle,
-  onPrev,
-  onNext,
-  onScrub,
+  controlsProps,
 }: {
   track: Track;
-  playing: boolean;
-  progress: number;
+  lyrics: string[];
   lyricIdx: number;
-  pct: number;
-  fmt: (s: number) => string;
   roomStyle: React.CSSProperties;
   onExit: () => void;
-  onToggle: () => void;
-  onPrev: () => void;
-  onNext: () => void;
-  onScrub: (s: number) => void;
+  controlsProps: ControlsProps;
 }) {
   return (
     <div className="fixed inset-0 z-[60] room-bg text-foreground" style={roomStyle}>
@@ -598,13 +784,12 @@ function FocusMode({
       </button>
 
       <div className="relative z-10 h-full grid grid-cols-1 lg:grid-cols-2 gap-12 items-center px-8 lg:px-20 py-16">
-        {/* Vinyl */}
         <div className="flex justify-center">
           <div className="relative animate-pulse-glow rounded-full">
             <div
               className={[
                 "relative size-[300px] md:size-[460px] rounded-full bg-neutral-950 ring-1 ring-white/10 shadow-2xl overflow-hidden",
-                playing ? "animate-vinyl-spin" : "",
+                controlsProps.playing ? "animate-vinyl-spin" : "",
               ].join(" ")}
             >
               <div className="absolute inset-0 vinyl-glare" />
@@ -632,7 +817,6 @@ function FocusMode({
           </div>
         </div>
 
-        {/* Lyrics + meta */}
         <div className="flex flex-col gap-8 max-w-xl">
           <div>
             <p className="text-[10px] uppercase tracking-[0.3em] text-accent mb-3">Now Playing</p>
@@ -644,8 +828,8 @@ function FocusMode({
             </p>
           </div>
 
-          <div className="space-y-4 min-h-[260px]">
-            {track.lyrics.map((line, i) => {
+          <div className="space-y-4 min-h-[260px] max-h-[50vh] overflow-y-auto pr-2">
+            {lyrics.map((line, i) => {
               const dist = Math.abs(i - lyricIdx);
               const active = i === lyricIdx;
               return (
@@ -666,17 +850,7 @@ function FocusMode({
             })}
           </div>
 
-          <Controls
-            playing={playing}
-            progress={progress}
-            duration={track.duration}
-            pct={pct}
-            fmt={fmt}
-            onToggle={onToggle}
-            onPrev={onPrev}
-            onNext={onNext}
-            onScrub={onScrub}
-          />
+          <Controls {...controlsProps} />
         </div>
       </div>
     </div>

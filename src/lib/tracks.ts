@@ -14,6 +14,7 @@ export type Track = {
   /** oklch lightness/chroma/hue for the room accent */
   accent: string; // valid CSS color (oklch)
   lyrics: string[];
+  previewUrl?: string | null;
 };
 
 export const TRACKS: Track[] = [
