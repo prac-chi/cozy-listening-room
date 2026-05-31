@@ -106,6 +106,7 @@ function Dashboard() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
+  const spotifyDeviceIdRef = useRef<string | null>(null);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -138,7 +139,8 @@ function Dashboard() {
       try {
         const player = await createSpotifyPlayback((state) => {
           if (cancelled) return;
-          const resolvedDeviceId = state.deviceId ?? playerState?.deviceId ?? null;
+          const resolvedDeviceId = state.deviceId ?? spotifyDeviceIdRef.current ?? null;
+          spotifyDeviceIdRef.current = resolvedDeviceId;
           setPlayerState({
             ...state,
             deviceId: resolvedDeviceId,
