@@ -202,7 +202,7 @@ export const getProfile = () => spotifyFetch<SpotifyProfile>("/me");
 
 export const getTopTracks = (limit = 12) =>
   spotifyFetch<{ items: SpotifyTrack[] }>(
-    `/me/top/tracks?limit=${limit}&time_range=short_term`,
+    `/me/top/tracks?limit=${limit}&time_range=short_term&market=from_token`,
   );
 
 export const getRecentlyPlayed = (limit = 12) =>
@@ -212,7 +212,7 @@ export const getRecentlyPlayed = (limit = 12) =>
 
 export const searchTracks = (q: string, limit = 12) =>
   spotifyFetch<{ tracks: { items: SpotifyTrack[] } }>(
-    `/search?type=track&limit=${limit}&q=${encodeURIComponent(q)}`,
+    `/search?type=track&limit=${limit}&market=from_token&q=${encodeURIComponent(q)}`,
   );
 
 export type SpotifyPlayerState = {
@@ -227,7 +227,7 @@ export type SpotifyPlayerState = {
   error: string | null;
 };
 
-type SpotifyWebPlaybackPlayer = {
+export type SpotifyWebPlaybackPlayer = {
   connect: () => Promise<boolean>;
   disconnect: () => void;
   togglePlay: () => Promise<void>;
