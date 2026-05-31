@@ -291,14 +291,15 @@ function Dashboard() {
 
   useEffect(() => {
     if (!canUseSpotifyPlayback || !playing || !track.uri) return;
+    const trackUri = track.uri;
     const deviceId = playerState?.deviceId;
     if (!deviceId) return;
 
     const currentUri = playerState?.currentTrackUri;
-    if (currentUri === track.uri && playerState?.isActive) return;
+    if (currentUri === trackUri && playerState?.isActive) return;
 
     transferPlayback(deviceId, false)
-      .then(() => playTrackOnDevice(deviceId, track.uri))
+      .then(() => playTrackOnDevice(deviceId, trackUri))
       .catch((error) => {
         setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
         setPlaying(false);
