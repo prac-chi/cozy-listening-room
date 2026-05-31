@@ -18,6 +18,7 @@ const SCOPES = [
 const AUTH_URL = "https://accounts.spotify.com/authorize";
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
 const API = "https://api.spotify.com/v1";
+const PLAYER_SDK_URL = "https://sdk.scdn.co/spotify-player.js";
 
 const LS = {
   access: "spotify_access_token",
@@ -194,13 +195,14 @@ export type SpotifyTrack = {
   preview_url: string | null;
   artists: { name: string }[];
   album: { name: string; images: { url: string; width: number; height: number }[] };
+  external_urls?: { spotify?: string };
 };
 
 export const getProfile = () => spotifyFetch<SpotifyProfile>("/me");
 
 export const getTopTracks = (limit = 12) =>
   spotifyFetch<{ items: SpotifyTrack[] }>(
-    `/me/top/tracks?limit=${limit}&time_range=short_term`,
+    `/me/top/tracks?limit=${limit}&time_range=short_term&market=from_token`,
   );
 
 export const getRecentlyPlayed = (limit = 12) =>
@@ -210,5 +212,201 @@ export const getRecentlyPlayed = (limit = 12) =>
 
 export const searchTracks = (q: string, limit = 12) =>
   spotifyFetch<{ tracks: { items: SpotifyTrack[] } }>(
-    `/search?type=track&limit=${limit}&q=${encodeURIComponent(q)}`,
+    `/search?type=track&limit=${limit}&market=from_token&q=${encodeURIComponent(q)}`,
   );
+
+export type SpotifyPlayerState = {
+  deviceId: string | null;
+  isReady: boolean;
+  isPremium: boolean;
+  isActive: boolean;
+  currentTrackUri: string | null;
+  paused: boolean;
+  position: number;
+  duration: number;
+  error: string | null;
+};
+
+export type SpotifyWebPlaybackPlayer = {
+  connect: () => Promise<boolean>;
+  disconnect: () => void;
+  togglePlay: () => Promise<void>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
+  seek: (positionMs: number) => Promise<void>;
+  setVolume: (volume: number) => Promise<void>;
+  addListener: (event: string, cb: (payload: any) => void) => boolean;
+  removeListener: (event?: string) => boolean;
+};
+
+declare global {
+  interface Window {
+    Spotify?: {
+      Player: new (config: {
+        name: string;
+        getOAuthToken: (cb: (token: string) => void) => void;
+        volume?: number;
+      }) => SpotifyWebPlaybackPlayer;
+    };
+    onSpotifyWebPlaybackSDKReady?: () => void;
+  }
+}
+
+let sdkPromise: Promise<void> | null = null;
+
+export async function ensureSpotifyPlaybackSdk() {
+  if (typeof window === "undefined") return;
+  if (window.Spotify?.Player) return;
+  if (sdkPromise) return sdkPromise;
+
+  sdkPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${PLAYER_SDK_URL}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Failed to load Spotify Playback SDK.")), {
+        once: true,
+      });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = PLAYER_SDK_URL;
+    script.async = true;
+    script.onerror = () => reject(new Error("Failed to load Spotify Playback SDK."));
+    window.onSpotifyWebPlaybackSDKReady = () => resolve();
+    document.body.appendChild(script);
+  });
+
+  return sdkPromise;
+}
+
+export async function createSpotifyPlayback(
+  onStateChange: (state: SpotifyPlayerState) => void,
+  volume = 0.7,
+) {
+  await ensureSpotifyPlaybackSdk();
+  if (!window.Spotify?.Player) throw new Error("Spotify Playback SDK unavailable.");
+
+  const player = new window.Spotify.Player({
+    name: "echo.room",
+    getOAuthToken: async (cb) => {
+      const token = await getValidToken();
+      cb(token ?? "");
+    },
+    volume,
+  });
+
+  const emitError = (message: string) => {
+    onStateChange({
+      deviceId: null,
+      isReady: false,
+      isPremium: false,
+      isActive: false,
+      currentTrackUri: null,
+      paused: true,
+      position: 0,
+      duration: 0,
+      error: message,
+    });
+  };
+
+  player.addListener("ready", ({ device_id }: { device_id: string }) => {
+    onStateChange({
+      deviceId: device_id,
+      isReady: true,
+      isPremium: true,
+      isActive: false,
+      currentTrackUri: null,
+      paused: true,
+      position: 0,
+      duration: 0,
+      error: null,
+    });
+  });
+
+  player.addListener("not_ready", () => {
+    emitError("Spotify player went offline.");
+  });
+  player.addListener("initialization_error", ({ message }: { message: string }) => emitError(message));
+  player.addListener("authentication_error", ({ message }: { message: string }) => emitError(message));
+  player.addListener("account_error", ({ message }: { message: string }) => {
+    onStateChange({
+      deviceId: null,
+      isReady: false,
+      isPremium: false,
+      isActive: false,
+      currentTrackUri: null,
+      paused: true,
+      position: 0,
+      duration: 0,
+      error: message,
+    });
+  });
+  player.addListener("playback_error", ({ message }: { message: string }) => emitError(message));
+
+  player.addListener("player_state_changed", (state: any) => {
+    if (!state) {
+      onStateChange({
+        deviceId: null,
+        isReady: true,
+        isPremium: true,
+        isActive: false,
+        currentTrackUri: null,
+        paused: true,
+        position: 0,
+        duration: 0,
+        error: null,
+      });
+      return;
+    }
+    onStateChange({
+      deviceId: null,
+      isReady: true,
+      isPremium: true,
+      isActive: true,
+      currentTrackUri: state.track_window.current_track?.uri ?? null,
+      paused: state.paused,
+      position: state.position ?? 0,
+      duration: state.duration ?? 0,
+      error: null,
+    });
+  });
+
+  const connected = await player.connect();
+  if (!connected) throw new Error("Could not connect Spotify player.");
+  return player;
+}
+
+export async function transferPlayback(deviceId: string, play = false) {
+  const token = await getValidToken();
+  if (!token) throw new Error("Not authenticated with Spotify.");
+  const res = await fetch(`${API}/me/player`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ device_ids: [deviceId], play }),
+  });
+  if (!res.ok && res.status !== 204) {
+    const txt = await res.text();
+    throw new Error(`Spotify transfer failed (${res.status}): ${txt}`);
+  }
+}
+
+export async function playTrackOnDevice(deviceId: string, uri: string) {
+  const token = await getValidToken();
+  if (!token) throw new Error("Not authenticated with Spotify.");
+  const res = await fetch(`${API}/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ uris: [uri] }),
+  });
+  if (!res.ok && res.status !== 204) {
+    const txt = await res.text();
+    throw new Error(`Spotify play failed (${res.status}): ${txt}`);
+  }
+}

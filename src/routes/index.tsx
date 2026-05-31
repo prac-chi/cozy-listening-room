@@ -139,7 +139,7 @@ function Landing() {
             </Link>
           </div>
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
-            Real Spotify login · PKCE · no password stored
+            Spotify handles the sign-in screen · no separate app password or OTP
           </p>
         </div>
 

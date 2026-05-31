@@ -11,6 +11,8 @@ export type Track = {
   album: string;
   art: string;
   duration: number; // seconds
+  uri?: string;
+  externalUrl?: string;
   /** oklch lightness/chroma/hue for the room accent */
   accent: string; // valid CSS color (oklch)
   lyrics: string[];
