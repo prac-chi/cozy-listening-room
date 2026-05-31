@@ -21,13 +21,18 @@ import { TRACKS, type Track } from "@/lib/tracks";
 import polaroidRain from "@/assets/polaroid-rain.jpg";
 import {
   beginSpotifyLogin,
+  createSpotifyPlayback,
   getProfile,
   getTopTracks,
   isSpotifyConnected,
   logoutSpotify,
+  playTrackOnDevice,
   searchTracks,
+  transferPlayback,
   type SpotifyProfile,
+  type SpotifyPlayerState,
   type SpotifyTrack,
+  type SpotifyWebPlaybackPlayer,
 } from "@/lib/spotify";
 import { fetchLyrics } from "@/lib/lyrics";
 
@@ -57,12 +62,7 @@ const ACCENTS = [
   "oklch(0.76 0.16 150)",
 ];
 
-const FALLBACK_LYRICS = [
-  "(Lyrics for this song aren't available right now)",
-  "The night hums quietly in the background",
-  "Every note feels like a soft window opening",
-  "And the chord progression remembers you",
-];
+const NO_LYRICS = ["We don't have lyrics for this song yet."];
 
 function spotifyToTrack(t: SpotifyTrack, i: number): Track {
   return {
@@ -72,8 +72,10 @@ function spotifyToTrack(t: SpotifyTrack, i: number): Track {
     album: t.album.name,
     art: t.album.images[0]?.url ?? "",
     duration: Math.round(t.duration_ms / 1000),
+    uri: t.uri,
+    externalUrl: t.external_urls?.spotify,
     accent: ACCENTS[i % ACCENTS.length],
-    lyrics: FALLBACK_LYRICS,
+    lyrics: NO_LYRICS,
     previewUrl: t.preview_url,
   };
 }
@@ -83,7 +85,7 @@ function Dashboard() {
   const [trackIdx, setTrackIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [lyrics, setLyrics] = useState<string[]>(FALLBACK_LYRICS);
+  const [lyrics, setLyrics] = useState<string[]>(NO_LYRICS);
   const [lyricIdx, setLyricIdx] = useState(0);
   const [clock, setClock] = useState("22:45");
   const [liked, setLiked] = useState(false);
@@ -97,8 +99,13 @@ function Dashboard() {
   const [searchQ, setSearchQ] = useState("");
   const [searchResults, setSearchResults] = useState<Track[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [playerState, setPlayerState] = useState<SpotifyPlayerState | null>(null);
+  const [playerError, setPlayerError] = useState<string | null>(null);
+  const [playerReady, setPlayerReady] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -123,6 +130,39 @@ function Dashboard() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!connected || profile?.product !== "premium") return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const player = await createSpotifyPlayback((state) => {
+          if (cancelled) return;
+          setPlayerState((prev) => ({
+            deviceId: state.deviceId ?? prev?.deviceId ?? null,
+            ...state,
+          }));
+          setPlayerReady(state.isReady || Boolean(prev?.deviceId));
+          if (state.error) setPlayerError(state.error);
+          else setPlayerError(null);
+          if (typeof state.paused === "boolean") setPlaying(!state.paused);
+          if (state.duration > 0) setProgress(Math.floor(state.position / 1000));
+        }, volume);
+
+        spotifyPlayerRef.current = player;
+      } catch (error) {
+        if (cancelled) return;
+        setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      spotifyPlayerRef.current?.disconnect();
+      spotifyPlayerRef.current = null;
+    };
+  }, [connected, profile?.product]);
+
   // Real lyrics fetch on track change
   useEffect(() => {
     let cancelled = false;
@@ -130,19 +170,22 @@ function Dashboard() {
     setLyrics(["Loading lyrics…"]);
     fetchLyrics(track.artist, track.title).then((l) => {
       if (cancelled) return;
-      setLyrics(l && l.length ? l : FALLBACK_LYRICS);
+      setLyrics(l && l.length ? l : NO_LYRICS);
     });
     return () => {
       cancelled = true;
     };
   }, [track.id, track.artist, track.title]);
 
+  const canUseSpotifyPlayback = connected && profile?.product === "premium";
+  const canUsePreview = Boolean(track.previewUrl) && !canUseSpotifyPlayback;
+
   // Audio element: load new src on track change
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
     setProgress(0);
-    if (track.previewUrl) {
+    if (canUsePreview && track.previewUrl) {
       a.src = track.previewUrl;
       a.load();
       if (playing) a.play().catch(() => setPlaying(false));
@@ -151,15 +194,15 @@ function Dashboard() {
       a.load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track.id]);
+  }, [track.id, track.previewUrl, canUsePreview, playing]);
 
   // Play/pause sync
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-    if (playing && track.previewUrl) a.play().catch(() => setPlaying(false));
+    if (canUsePreview && playing && track.previewUrl) a.play().catch(() => setPlaying(false));
     else a.pause();
-  }, [playing, track.previewUrl]);
+  }, [playing, track.previewUrl, canUsePreview]);
 
   // Volume sync
   useEffect(() => {
@@ -167,6 +210,11 @@ function Dashboard() {
     if (!a) return;
     a.volume = muted ? 0 : volume;
   }, [volume, muted]);
+
+  useEffect(() => {
+    if (!canUseSpotifyPlayback) return;
+    spotifyPlayerRef.current?.setVolume(muted ? 0 : volume).catch(() => undefined);
+  }, [canUseSpotifyPlayback, muted, volume]);
 
   // Lyric ticker
   useEffect(() => {
@@ -200,9 +248,12 @@ function Dashboard() {
     const q = searchQ.trim();
     if (!q) {
       setSearchResults([]);
+      setSearchError(null);
+      setSearching(false);
       return;
     }
     setSearching(true);
+    setSearchError(null);
     const id = setTimeout(async () => {
       try {
         const r = await searchTracks(q, 12);
@@ -210,6 +261,7 @@ function Dashboard() {
       } catch (e) {
         console.error("Search failed", e);
         setSearchResults([]);
+        setSearchError(e instanceof Error ? e.message : "Search failed.");
       } finally {
         setSearching(false);
       }
@@ -234,6 +286,57 @@ function Dashboard() {
     setSearchQ("");
   };
 
+  useEffect(() => {
+    if (!canUseSpotifyPlayback || !playing || !track.uri) return;
+    const deviceId = playerState?.deviceId;
+    if (!deviceId) return;
+
+    const currentUri = playerState?.currentTrackUri;
+    if (currentUri === track.uri && playerState?.isActive) return;
+
+    playTrackOnDevice(deviceId, track.uri)
+      .then(() => transferPlayback(deviceId, true))
+      .catch((error) => {
+        setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
+        setPlaying(false);
+      });
+  }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive]);
+
+  const togglePlayback = async () => {
+    if (canUseSpotifyPlayback) {
+      const player = spotifyPlayerRef.current;
+      const deviceId = playerState?.deviceId;
+      if (!player || !deviceId || !track.uri) {
+        setPlayerError("Spotify player is still connecting.");
+        return;
+      }
+
+      try {
+        await transferPlayback(deviceId, false);
+        if (playerState?.currentTrackUri !== track.uri || !playerState?.isActive) {
+          await playTrackOnDevice(deviceId, track.uri);
+          await transferPlayback(deviceId, true);
+          setPlaying(true);
+          return;
+        }
+
+        if (playerState?.paused) {
+          await player.resume();
+          setPlaying(true);
+        } else {
+          await player.pause();
+          setPlaying(false);
+        }
+      } catch (error) {
+        setPlayerError(error instanceof Error ? error.message : "Could not control Spotify playback.");
+      }
+      return;
+    }
+
+    if (!track.previewUrl) return;
+    setPlaying((p) => !p);
+  };
+
   const roomStyle = useMemo(
     () =>
       ({
@@ -243,13 +346,21 @@ function Dashboard() {
     [track.accent],
   );
 
-  const duration = track.previewUrl ? 30 : track.duration; // Spotify previews = 30s
+  const duration = canUseSpotifyPlayback
+    ? Math.max(1, Math.round((playerState?.duration ?? track.duration * 1000) / 1000))
+    : track.previewUrl
+      ? 30
+      : track.duration;
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const pct = Math.min(100, (progress / Math.max(1, duration)) * 100);
 
   const onScrub = (s: number) => {
     setProgress(s);
     const a = audioRef.current;
+    if (canUseSpotifyPlayback) {
+      spotifyPlayerRef.current?.seek(s * 1000).catch(() => undefined);
+      return;
+    }
     if (a && track.previewUrl) a.currentTime = s;
   };
 
@@ -261,8 +372,8 @@ function Dashboard() {
     fmt,
     volume,
     muted,
-    hasAudio: Boolean(track.previewUrl),
-    onToggle: () => setPlaying((p) => !p),
+    hasAudio: canUseSpotifyPlayback ? Boolean(track.uri && (playerReady || playerState?.deviceId)) : Boolean(track.previewUrl),
+    onToggle: togglePlayback,
     onPrev: () => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length),
     onNext: () => setTrackIdx((i) => (i + 1) % tracks.length),
     onScrub,
@@ -465,9 +576,19 @@ function Dashboard() {
             <p className="text-muted-foreground text-base md:text-lg">
               {track.artist} — <span className="italic">{track.album}</span>
             </p>
-            {!track.previewUrl && (
+            {playerError && (
+              <p className="text-[10px] uppercase tracking-[0.2em] text-destructive/80">
+                {playerError}
+              </p>
+            )}
+            {!canUseSpotifyPlayback && !track.previewUrl && (
               <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
-                No preview available for this track
+                No preview available — open it in Spotify to hear the full track
+              </p>
+            )}
+            {canUseSpotifyPlayback && profile?.product === "premium" && (
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                Playing through your Spotify Premium session
               </p>
             )}
           </div>
@@ -619,8 +740,11 @@ function Dashboard() {
               {searching && (
                 <p className="text-xs text-muted-foreground px-2 py-3">Searching…</p>
               )}
+              {!searching && searchError && (
+                <p className="text-xs text-destructive px-2 py-3 break-words">{searchError}</p>
+              )}
               {!searching && searchResults.length === 0 && searchQ && (
-                <p className="text-xs text-muted-foreground px-2 py-3">No matches.</p>
+                <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title or artist.</p>
               )}
               {searchResults.map((t) => (
                 <button
