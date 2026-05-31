@@ -297,8 +297,8 @@ function Dashboard() {
     const currentUri = playerState?.currentTrackUri;
     if (currentUri === track.uri && playerState?.isActive) return;
 
-    playTrackOnDevice(deviceId, track.uri)
-      .then(() => transferPlayback(deviceId, true))
+    transferPlayback(deviceId, false)
+      .then(() => playTrackOnDevice(deviceId, track.uri))
       .catch((error) => {
         setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
         setPlaying(false);
