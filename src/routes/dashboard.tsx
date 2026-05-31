@@ -138,11 +138,12 @@ function Dashboard() {
       try {
         const player = await createSpotifyPlayback((state) => {
           if (cancelled) return;
-          setPlayerState((prev) => ({
-            deviceId: state.deviceId ?? prev?.deviceId ?? null,
+          const resolvedDeviceId = state.deviceId ?? playerState?.deviceId ?? null;
+          setPlayerState({
             ...state,
-          }));
-          setPlayerReady(state.isReady || Boolean(prev?.deviceId));
+            deviceId: resolvedDeviceId,
+          });
+          setPlayerReady(state.isReady || Boolean(resolvedDeviceId));
           if (state.error) setPlayerError(state.error);
           else setPlayerError(null);
           if (typeof state.paused === "boolean") setPlaying(!state.paused);
