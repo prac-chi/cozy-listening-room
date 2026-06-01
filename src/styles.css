@@ -73,10 +73,11 @@
   .text-glow { text-shadow: 0 0 18px var(--glow); }
   .room-bg {
     background:
-      radial-gradient(900px 600px at 50% -10%, var(--glow), transparent 60%),
-      radial-gradient(700px 500px at 10% 110%, color-mix(in oklab, var(--accent) 40%, transparent), transparent 60%),
+      radial-gradient(1100px 700px at 50% -10%, var(--glow), transparent 60%),
+      radial-gradient(900px 600px at 10% 110%, color-mix(in oklab, var(--accent) 55%, transparent), transparent 65%),
+      radial-gradient(900px 600px at 90% 90%, color-mix(in oklab, var(--accent) 35%, transparent), transparent 70%),
       var(--color-background);
-    transition: background 1200ms ease;
+    transition: background 1400ms ease;
   }
 }
 
