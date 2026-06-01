@@ -62,7 +62,7 @@ const ACCENTS = [
   "oklch(0.76 0.16 150)",
 ];
 
-const NO_LYRICS = ["We don't have lyrics for this song yet."];
+const NO_LYRICS = ["We don't have lyrics for this song."];
 
 function spotifyToTrack(t: SpotifyTrack, i: number): Track {
   return {
@@ -771,7 +771,7 @@ function Dashboard() {
                 <p className="text-xs text-destructive px-2 py-3 break-words">{searchError}</p>
               )}
               {!searching && searchResults.length === 0 && searchQ && (
-                <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title or artist.</p>
+                <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title, artist, or a shorter search.</p>
               )}
               {searchResults.map((t) => (
                 <button
