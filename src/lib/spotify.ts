@@ -203,7 +203,7 @@ export const getProfile = () => spotifyFetch<SpotifyProfile>("/me");
 
 export const getTopTracks = (limit = 12) =>
   spotifyFetch<{ items: SpotifyTrack[] }>(
-    `/me/top/tracks?limit=${limit}&time_range=short_term&market=from_token`,
+    `/me/top/tracks?limit=${limit}&time_range=short_term`,
   );
 
 export const getRecentlyPlayed = (limit = 12) =>
