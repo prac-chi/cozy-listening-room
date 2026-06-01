@@ -203,7 +203,7 @@ export const getProfile = () => spotifyFetch<SpotifyProfile>("/me");
 
 export const getTopTracks = (limit = 12) =>
   spotifyFetch<{ items: SpotifyTrack[] }>(
-    `/me/top/tracks?limit=${limit}&time_range=short_term&market=from_token`,
+    `/me/top/tracks?limit=${limit}&time_range=short_term`,
   );
 
 export const getRecentlyPlayed = (limit = 12) =>
@@ -211,24 +211,32 @@ export const getRecentlyPlayed = (limit = 12) =>
     `/me/player/recently-played?limit=${limit}`,
   );
 
-export async function searchTracks(q: string, limit = 12) {
+export async function searchTracks(q: string, limit = 20) {
   const query = q.trim();
-  if (!query) return { tracks: { items: [] } };
+  if (query.length < 2) return { tracks: { items: [] } };
+
+  // Spotify requires limit 1-50; default 20 is the safest.
+  const safeLimit = Math.min(50, Math.max(1, Math.floor(limit)));
 
   const attempts = [
-    `/search?type=track&limit=${limit}&market=from_token&q=${encodeURIComponent(query)}`,
-    `/search?type=track&limit=${limit}&q=${encodeURIComponent(query)}`,
-    `/search?type=track&limit=${limit}&q=${encodeURIComponent(`track:${query}`)}`,
+    `/search?type=track&limit=${safeLimit}&q=${encodeURIComponent(query)}`,
+    `/search?type=track&limit=${safeLimit}&q=${encodeURIComponent(`track:${query}`)}`,
   ];
 
   let lastResult: { tracks: { items: SpotifyTrack[] } } | null = null;
+  let lastError: unknown = null;
 
   for (const path of attempts) {
-    const result = await spotifyFetch<{ tracks: { items: SpotifyTrack[] } }>(path);
-    lastResult = result;
-    if (result.tracks.items.length > 0) return result;
+    try {
+      const result = await spotifyFetch<{ tracks: { items: SpotifyTrack[] } }>(path);
+      lastResult = result;
+      if (result.tracks?.items?.length) return result;
+    } catch (err) {
+      lastError = err;
+    }
   }
 
+  if (!lastResult && lastError) throw lastError;
   return lastResult ?? { tracks: { items: [] } };
 }
 

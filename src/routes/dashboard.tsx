@@ -35,6 +35,7 @@ import {
   type SpotifyWebPlaybackPlayer,
 } from "@/lib/spotify";
 import { fetchLyrics } from "@/lib/lyrics";
+import { extractAccent } from "@/lib/color";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -53,13 +54,16 @@ const MOODS = [
 ];
 
 const ACCENTS = [
-  "oklch(0.78 0.18 10)",
-  "oklch(0.82 0.17 35)",
-  "oklch(0.72 0.18 280)",
-  "oklch(0.7 0.18 235)",
-  "oklch(0.8 0.18 55)",
-  "oklch(0.74 0.18 330)",
-  "oklch(0.76 0.16 150)",
+  "oklch(0.78 0.18 10)",   // coral
+  "oklch(0.82 0.17 35)",   // amber
+  "oklch(0.8 0.18 55)",    // gold
+  "oklch(0.78 0.17 95)",   // chartreuse
+  "oklch(0.76 0.16 150)",  // mint
+  "oklch(0.74 0.16 190)",  // teal
+  "oklch(0.7 0.18 235)",   // azure
+  "oklch(0.72 0.18 280)",  // violet
+  "oklch(0.74 0.18 330)",  // magenta
+  "oklch(0.78 0.18 355)",  // rose
 ];
 
 const NO_LYRICS = ["We don't have lyrics for this song."];
@@ -103,6 +107,7 @@ function Dashboard() {
   const [playerState, setPlayerState] = useState<SpotifyPlayerState | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
+  const [liveAccent, setLiveAccent] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
@@ -189,6 +194,19 @@ function Dashboard() {
     };
   }, [track.id, track.artist, track.title]);
 
+  // Extract dominant color from album art so the room glows with the song
+  useEffect(() => {
+    let cancelled = false;
+    setLiveAccent(null);
+    if (!track.art) return;
+    extractAccent(track.art).then((c) => {
+      if (!cancelled && c) setLiveAccent(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [track.art]);
+
   const canUseSpotifyPlayback = connected && profile?.product === "premium";
   const canUsePreview = Boolean(track.previewUrl) && !canUseSpotifyPlayback;
 
@@ -228,12 +246,12 @@ function Dashboard() {
     spotifyPlayerRef.current?.setVolume(muted ? 0 : volume).catch(() => undefined);
   }, [canUseSpotifyPlayback, muted, volume]);
 
-  // Lyric ticker
+  // Lyric ticker — only advance while music is actually playing
   useEffect(() => {
-    if (!lyrics.length) return;
+    if (!playing || lyrics.length <= 1) return;
     const id = setInterval(() => setLyricIdx((i) => (i + 1) % lyrics.length), 4200);
     return () => clearInterval(id);
-  }, [lyrics.length]);
+  }, [playing, lyrics.length]);
 
   // Clock
   useEffect(() => {
@@ -364,14 +382,14 @@ function Dashboard() {
     setPlaying((p) => !p);
   };
 
-  const roomStyle = useMemo(
-    () =>
-      ({
-        ["--accent" as string]: track.accent,
-        ["--glow" as string]: `color-mix(in oklab, ${track.accent} 55%, transparent)`,
-      }) as React.CSSProperties,
-    [track.accent],
-  );
+  const roomStyle = useMemo(() => {
+    const accent = liveAccent ?? track.accent;
+    return {
+      ["--accent" as string]: accent,
+      ["--glow" as string]: `color-mix(in oklab, ${accent} 55%, transparent)`,
+      ["--room-tint" as string]: `color-mix(in oklab, ${accent} 18%, transparent)`,
+    } as React.CSSProperties;
+  }, [track.accent, liveAccent]);
 
   const duration = canUseSpotifyPlayback
     ? Math.max(1, Math.round((playerState?.duration ?? track.duration * 1000) / 1000))
