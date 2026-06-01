@@ -139,7 +139,7 @@ function Landing() {
             </Link>
           </div>
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
-            Spotify handles the sign-in screen · no separate app password or OTP
+            Spotify handles sign-in directly · account chooser now appears every time
           </p>
         </div>
 
