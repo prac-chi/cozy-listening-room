@@ -67,6 +67,7 @@ export async function beginSpotifyLogin() {
     code_challenge: challenge,
     state,
     scope: SCOPES,
+    show_dialog: "true",
   });
 
   window.location.assign(`${AUTH_URL}?${params.toString()}`);
@@ -210,10 +211,26 @@ export const getRecentlyPlayed = (limit = 12) =>
     `/me/player/recently-played?limit=${limit}`,
   );
 
-export const searchTracks = (q: string, limit = 12) =>
-  spotifyFetch<{ tracks: { items: SpotifyTrack[] } }>(
-    `/search?type=track&limit=${limit}&market=from_token&q=${encodeURIComponent(q)}`,
-  );
+export async function searchTracks(q: string, limit = 12) {
+  const query = q.trim();
+  if (!query) return { tracks: { items: [] } };
+
+  const attempts = [
+    `/search?type=track&limit=${limit}&market=from_token&q=${encodeURIComponent(query)}`,
+    `/search?type=track&limit=${limit}&q=${encodeURIComponent(query)}`,
+    `/search?type=track&limit=${limit}&q=${encodeURIComponent(`track:${query}`)}`,
+  ];
+
+  let lastResult: { tracks: { items: SpotifyTrack[] } } | null = null;
+
+  for (const path of attempts) {
+    const result = await spotifyFetch<{ tracks: { items: SpotifyTrack[] } }>(path);
+    lastResult = result;
+    if (result.tracks.items.length > 0) return result;
+  }
+
+  return lastResult ?? { tracks: { items: [] } };
+}
 
 export type SpotifyPlayerState = {
   deviceId: string | null;

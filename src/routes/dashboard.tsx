@@ -62,7 +62,7 @@ const ACCENTS = [
   "oklch(0.76 0.16 150)",
 ];
 
-const NO_LYRICS = ["We don't have lyrics for this song yet."];
+const NO_LYRICS = ["We don't have lyrics for this song."];
 
 function spotifyToTrack(t: SpotifyTrack, i: number): Track {
   return {
@@ -107,6 +107,8 @@ function Dashboard() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const spotifyDeviceIdRef = useRef<string | null>(null);
+  const pendingSpotifyTrackRef = useRef<string | null>(null);
+  const spotifyCommandRef = useRef(false);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -141,6 +143,9 @@ function Dashboard() {
           if (cancelled) return;
           const resolvedDeviceId = state.deviceId ?? spotifyDeviceIdRef.current ?? null;
           spotifyDeviceIdRef.current = resolvedDeviceId;
+          if (state.currentTrackUri) {
+            pendingSpotifyTrackRef.current = state.currentTrackUri;
+          }
           setPlayerState({
             ...state,
             deviceId: resolvedDeviceId,
@@ -148,7 +153,9 @@ function Dashboard() {
           setPlayerReady(state.isReady || Boolean(resolvedDeviceId));
           if (state.error) setPlayerError(state.error);
           else setPlayerError(null);
-          if (typeof state.paused === "boolean") setPlaying(!state.paused);
+          if (!spotifyCommandRef.current && typeof state.paused === "boolean") {
+            setPlaying(!state.paused);
+          }
           if (state.duration > 0) setProgress(Math.floor(state.position / 1000));
         }, volume);
 
@@ -161,6 +168,8 @@ function Dashboard() {
 
     return () => {
       cancelled = true;
+      spotifyCommandRef.current = false;
+      pendingSpotifyTrackRef.current = null;
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
     };
@@ -290,19 +299,27 @@ function Dashboard() {
   };
 
   useEffect(() => {
-    if (!canUseSpotifyPlayback || !playing || !track.uri) return;
+    if (!canUseSpotifyPlayback || !playing || !track.uri || spotifyCommandRef.current) return;
     const trackUri = track.uri;
     const deviceId = playerState?.deviceId;
     if (!deviceId) return;
 
-    const currentUri = playerState?.currentTrackUri;
+    const currentUri = playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current;
     if (currentUri === trackUri && playerState?.isActive) return;
 
+    spotifyCommandRef.current = true;
+    pendingSpotifyTrackRef.current = trackUri;
     transferPlayback(deviceId, false)
       .then(() => playTrackOnDevice(deviceId, trackUri))
       .catch((error) => {
+        pendingSpotifyTrackRef.current = null;
         setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
         setPlaying(false);
+      })
+      .finally(() => {
+        window.setTimeout(() => {
+          spotifyCommandRef.current = false;
+        }, 300);
       });
   }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive]);
 
@@ -316,10 +333,11 @@ function Dashboard() {
       }
 
       try {
+        spotifyCommandRef.current = true;
         await transferPlayback(deviceId, false);
-        if (playerState?.currentTrackUri !== track.uri || !playerState?.isActive) {
+        pendingSpotifyTrackRef.current = track.uri;
+        if ((playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current) !== track.uri || !playerState?.isActive) {
           await playTrackOnDevice(deviceId, track.uri);
-          await transferPlayback(deviceId, true);
           setPlaying(true);
           return;
         }
@@ -332,7 +350,12 @@ function Dashboard() {
           setPlaying(false);
         }
       } catch (error) {
+        pendingSpotifyTrackRef.current = null;
         setPlayerError(error instanceof Error ? error.message : "Could not control Spotify playback.");
+      } finally {
+        window.setTimeout(() => {
+          spotifyCommandRef.current = false;
+        }, 300);
       }
       return;
     }
@@ -748,7 +771,7 @@ function Dashboard() {
                 <p className="text-xs text-destructive px-2 py-3 break-words">{searchError}</p>
               )}
               {!searching && searchResults.length === 0 && searchQ && (
-                <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title or artist.</p>
+                <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title, artist, or a shorter search.</p>
               )}
               {searchResults.map((t) => (
                 <button
