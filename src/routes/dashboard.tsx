@@ -382,14 +382,14 @@ function Dashboard() {
     setPlaying((p) => !p);
   };
 
-  const roomStyle = useMemo(
-    () =>
-      ({
-        ["--accent" as string]: track.accent,
-        ["--glow" as string]: `color-mix(in oklab, ${track.accent} 55%, transparent)`,
-      }) as React.CSSProperties,
-    [track.accent],
-  );
+  const roomStyle = useMemo(() => {
+    const accent = liveAccent ?? track.accent;
+    return {
+      ["--accent" as string]: accent,
+      ["--glow" as string]: `color-mix(in oklab, ${accent} 55%, transparent)`,
+      ["--room-tint" as string]: `color-mix(in oklab, ${accent} 18%, transparent)`,
+    } as React.CSSProperties;
+  }, [track.accent, liveAccent]);
 
   const duration = canUseSpotifyPlayback
     ? Math.max(1, Math.round((playerState?.duration ?? track.duration * 1000) / 1000))
