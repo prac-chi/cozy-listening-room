@@ -232,12 +232,12 @@ function Dashboard() {
     spotifyPlayerRef.current?.setVolume(muted ? 0 : volume).catch(() => undefined);
   }, [canUseSpotifyPlayback, muted, volume]);
 
-  // Lyric ticker
+  // Lyric ticker — only advance while music is actually playing
   useEffect(() => {
-    if (!lyrics.length) return;
+    if (!playing || lyrics.length <= 1) return;
     const id = setInterval(() => setLyricIdx((i) => (i + 1) % lyrics.length), 4200);
     return () => clearInterval(id);
-  }, [lyrics.length]);
+  }, [playing, lyrics.length]);
 
   // Clock
   useEffect(() => {
