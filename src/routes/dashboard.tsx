@@ -194,6 +194,19 @@ function Dashboard() {
     };
   }, [track.id, track.artist, track.title]);
 
+  // Extract dominant color from album art so the room glows with the song
+  useEffect(() => {
+    let cancelled = false;
+    setLiveAccent(null);
+    if (!track.art) return;
+    extractAccent(track.art).then((c) => {
+      if (!cancelled && c) setLiveAccent(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [track.art]);
+
   const canUseSpotifyPlayback = connected && profile?.product === "premium";
   const canUsePreview = Boolean(track.previewUrl) && !canUseSpotifyPlayback;
 
