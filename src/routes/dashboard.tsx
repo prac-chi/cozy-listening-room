@@ -54,13 +54,16 @@ const MOODS = [
 ];
 
 const ACCENTS = [
-  "oklch(0.78 0.18 10)",
-  "oklch(0.82 0.17 35)",
-  "oklch(0.72 0.18 280)",
-  "oklch(0.7 0.18 235)",
-  "oklch(0.8 0.18 55)",
-  "oklch(0.74 0.18 330)",
-  "oklch(0.76 0.16 150)",
+  "oklch(0.78 0.18 10)",   // coral
+  "oklch(0.82 0.17 35)",   // amber
+  "oklch(0.8 0.18 55)",    // gold
+  "oklch(0.78 0.17 95)",   // chartreuse
+  "oklch(0.76 0.16 150)",  // mint
+  "oklch(0.74 0.16 190)",  // teal
+  "oklch(0.7 0.18 235)",   // azure
+  "oklch(0.72 0.18 280)",  // violet
+  "oklch(0.74 0.18 330)",  // magenta
+  "oklch(0.78 0.18 355)",  // rose
 ];
 
 const NO_LYRICS = ["We don't have lyrics for this song."];
