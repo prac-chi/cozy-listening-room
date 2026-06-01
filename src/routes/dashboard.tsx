@@ -107,6 +107,7 @@ function Dashboard() {
   const [playerState, setPlayerState] = useState<SpotifyPlayerState | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
+  const [liveAccent, setLiveAccent] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
