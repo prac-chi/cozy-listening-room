@@ -849,7 +849,7 @@ function Dashboard() {
               {!searching && searchError && (
                 <p className="text-xs text-destructive px-2 py-3 break-words">{searchError}</p>
               )}
-              {!searching && searchResults.length === 0 && searchQ && (
+              {!searching && !searchError && searchResults.length === 0 && searchQ && (
                 <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title, artist, or a shorter search.</p>
               )}
               {searchResults.map((t) => (
