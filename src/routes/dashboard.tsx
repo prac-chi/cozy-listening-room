@@ -115,6 +115,8 @@ function Dashboard() {
   const pendingSpotifyTrackRef = useRef<string | null>(null);
   const spotifyCommandRef = useRef(false);
   const trackChangePendingRef = useRef(false);
+  const spotifyCommandTimeoutRef = useRef<number | null>(null);
+  const progressBeforePauseRef = useRef(0);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -152,18 +154,31 @@ function Dashboard() {
           if (state.currentTrackUri) {
             pendingSpotifyTrackRef.current = state.currentTrackUri;
           }
+          const nextPositionMs = typeof state.position === "number"
+            ? state.position
+            : progressBeforePauseRef.current * 1000;
+          const nextDurationMs = state.duration > 0
+            ? state.duration
+            : Math.max(track.duration * 1000, 1);
+          const isMatchingTrack = state.currentTrackUri === track.uri;
+
           setPlayerState({
             ...state,
             deviceId: resolvedDeviceId,
+            position: nextPositionMs,
+            duration: nextDurationMs,
           });
           setPlayerReady(state.isReady || Boolean(resolvedDeviceId));
           if (state.error) setPlayerError(state.error);
           else setPlayerError(null);
-          if (!spotifyCommandRef.current && typeof state.paused === "boolean") {
+          if (typeof state.position === "number") {
+            progressBeforePauseRef.current = Math.max(0, Math.floor(state.position / 1000));
+          }
+          if (!spotifyCommandRef.current && isMatchingTrack && typeof state.paused === "boolean") {
             setPlaying(!state.paused);
           }
-          if (state.duration > 0) {
-            setProgress(Math.floor(state.position / 1000));
+          if (isMatchingTrack) {
+            setProgress(Math.max(0, Math.floor(nextPositionMs / 1000)));
           }
           if (state.currentTrackUri && state.currentTrackUri === track.uri) {
             trackChangePendingRef.current = false;
@@ -180,6 +195,7 @@ function Dashboard() {
     return () => {
       cancelled = true;
       spotifyCommandRef.current = false;
+      if (spotifyCommandTimeoutRef.current) window.clearTimeout(spotifyCommandTimeoutRef.current);
       pendingSpotifyTrackRef.current = null;
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
