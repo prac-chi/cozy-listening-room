@@ -157,21 +157,38 @@ async function getValidToken(): Promise<string | null> {
   return refreshAccessToken();
 }
 
+async function spotifyApiRequest(path: string, init: RequestInit = {}, retryOnAuth = true) {
+  const token = await getValidToken();
+  if (!token) throw new Error("Not authenticated with Spotify.");
+
+  const headers = new Headers(init.headers || {});
+  headers.set("Authorization", `Bearer ${token}`);
+
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const res = await fetch(`${API}${path}`, {
+    ...init,
+    headers,
+  });
+
+  if (res.status === 401 && retryOnAuth) {
+    const refreshedToken = await refreshAccessToken();
+    if (refreshedToken) {
+      return spotifyApiRequest(path, init, false);
+    }
+  }
+
+  return res;
+}
+
 // ---------- API ----------
 export async function spotifyFetch<T = unknown>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const token = await getValidToken();
-  if (!token) throw new Error("Not authenticated with Spotify.");
-  const res = await fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      ...(init.headers || {}),
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const res = await spotifyApiRequest(path, init);
   if (res.status === 204) return undefined as T;
   if (!res.ok) {
     const txt = await res.text();
@@ -221,8 +238,18 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
   const validMarket = normalizedMarket && /^[A-Z]{2}$/.test(normalizedMarket)
     ? normalizedMarket
     : null;
+  const simplifiedQuery = query
+    .replace(/[^\p{L}\p{N}\s'&-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const queryVariants = Array.from(
-    new Set([query, `track:${query}`, `"${query}"`, `track:"${query}"`]),
+    new Set([
+      query,
+      simplifiedQuery,
+      `track:${query}`,
+      `"${query}"`,
+      `track:"${query}"`,
+    ].filter(Boolean)),
   );
 
   const attempts = [
@@ -249,7 +276,13 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
     }
   }
 
-  if (!lastResult && lastError) throw lastError;
+  if (
+    !lastResult
+    && lastError instanceof Error
+    && /Not authenticated|Spotify 401/i.test(lastError.message)
+  ) {
+    throw lastError;
+  }
   return lastResult ?? { tracks: { items: [] } };
 }
 
@@ -417,14 +450,8 @@ export async function createSpotifyPlayback(
 }
 
 export async function transferPlayback(deviceId: string, play = false) {
-  const token = await getValidToken();
-  if (!token) throw new Error("Not authenticated with Spotify.");
-  const res = await fetch(`${API}/me/player`, {
+  const res = await spotifyApiRequest("/me/player", {
     method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({ device_ids: [deviceId], play }),
   });
   if (!res.ok && res.status !== 204) {
@@ -434,14 +461,8 @@ export async function transferPlayback(deviceId: string, play = false) {
 }
 
 export async function playTrackOnDevice(deviceId: string, uri: string) {
-  const token = await getValidToken();
-  if (!token) throw new Error("Not authenticated with Spotify.");
-  const res = await fetch(`${API}/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
+  const res = await spotifyApiRequest(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
     method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({ uris: [uri] }),
   });
   if (!res.ok && res.status !== 204) {
