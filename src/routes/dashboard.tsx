@@ -108,12 +108,14 @@ function Dashboard() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
   const [liveAccent, setLiveAccent] = useState<string | null>(null);
+  const [lyricAnchorLine, setLyricAnchorLine] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const spotifyDeviceIdRef = useRef<string | null>(null);
   const pendingSpotifyTrackRef = useRef<string | null>(null);
   const spotifyCommandRef = useRef(false);
+  const trackChangePendingRef = useRef(false);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -161,7 +163,12 @@ function Dashboard() {
           if (!spotifyCommandRef.current && typeof state.paused === "boolean") {
             setPlaying(!state.paused);
           }
-          if (state.duration > 0) setProgress(Math.floor(state.position / 1000));
+          if (state.duration > 0) {
+            setProgress(Math.floor(state.position / 1000));
+          }
+          if (state.currentTrackUri && state.currentTrackUri === track.uri) {
+            trackChangePendingRef.current = false;
+          }
         }, volume);
 
         spotifyPlayerRef.current = player;
@@ -184,6 +191,7 @@ function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     setLyricIdx(0);
+    setLyricAnchorLine(0);
     setLyrics(["Loading lyrics…"]);
     fetchLyrics(track.artist, track.title).then((l) => {
       if (cancelled) return;
@@ -246,12 +254,24 @@ function Dashboard() {
     spotifyPlayerRef.current?.setVolume(muted ? 0 : volume).catch(() => undefined);
   }, [canUseSpotifyPlayback, muted, volume]);
 
-  // Lyric ticker — only advance while music is actually playing
   useEffect(() => {
-    if (!playing || lyrics.length <= 1) return;
-    const id = setInterval(() => setLyricIdx((i) => (i + 1) % lyrics.length), 4200);
-    return () => clearInterval(id);
-  }, [playing, lyrics.length]);
+    if (lyrics.length <= 1) {
+      setLyricIdx(0);
+      return;
+    }
+
+    const totalDuration = Math.max(1, duration);
+    const safeProgress = Math.max(0, Math.min(progress, totalDuration));
+    const nextIndex = Math.min(
+      lyrics.length - 1,
+      Math.floor((safeProgress / totalDuration) * lyrics.length),
+    );
+
+    setLyricIdx(nextIndex);
+    if (nextIndex > lyricAnchorLine || safeProgress === 0) {
+      setLyricAnchorLine(nextIndex);
+    }
+  }, [duration, lyrics.length, progress, lyricAnchorLine]);
 
   // Clock
   useEffect(() => {
@@ -286,20 +306,21 @@ function Dashboard() {
     setSearchError(null);
     const id = setTimeout(async () => {
       try {
-        const r = await searchTracks(q, 12);
+        const r = await searchTracks(q, 12, profile?.country);
         setSearchResults(r.tracks.items.map(spotifyToTrack));
       } catch (e) {
         console.error("Search failed", e);
         setSearchResults([]);
-        setSearchError(e instanceof Error ? e.message : "Search failed.");
+        setSearchError("Couldn’t search Spotify right now. Please try a shorter title or artist name.");
       } finally {
         setSearching(false);
       }
     }, 350);
     return () => clearTimeout(id);
-  }, [searchQ, connected, searchOpen]);
+  }, [searchQ, connected, profile?.country, searchOpen]);
 
   const playSearchResult = (t: Track) => {
+    trackChangePendingRef.current = true;
     // Insert/replace at current index so the collection still flows
     setTracks((prev) => {
       const exists = prev.findIndex((x) => x.id === t.id);
@@ -323,9 +344,10 @@ function Dashboard() {
     if (!deviceId) return;
 
     const currentUri = playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current;
-    if (currentUri === trackUri && playerState?.isActive) return;
+    if (!trackChangePendingRef.current && currentUri === trackUri && playerState?.isActive) return;
 
     spotifyCommandRef.current = true;
+    trackChangePendingRef.current = false;
     pendingSpotifyTrackRef.current = trackUri;
     transferPlayback(deviceId, false)
       .then(() => playTrackOnDevice(deviceId, trackUri))
@@ -352,15 +374,22 @@ function Dashboard() {
 
       try {
         spotifyCommandRef.current = true;
-        await transferPlayback(deviceId, false);
+        const currentState = await player.getCurrentState();
+        const currentUri = currentState?.track_window?.current_track?.uri ?? playerState?.currentTrackUri;
+        const isPaused = currentState?.paused ?? playerState?.paused ?? true;
+        const isSameTrack = currentUri === track.uri;
+
         pendingSpotifyTrackRef.current = track.uri;
-        if ((playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current) !== track.uri || !playerState?.isActive) {
+        await transferPlayback(deviceId, false);
+
+        if (!isSameTrack) {
+          trackChangePendingRef.current = false;
           await playTrackOnDevice(deviceId, track.uri);
           setPlaying(true);
           return;
         }
 
-        if (playerState?.paused) {
+        if (isPaused) {
           await player.resume();
           setPlaying(true);
         } else {
@@ -428,6 +457,11 @@ function Dashboard() {
     },
     onMute: () => setMuted((m) => !m),
   };
+
+  useEffect(() => {
+    trackChangePendingRef.current = true;
+    setProgress(0);
+  }, [track.id]);
 
   if (focus) {
     return (
