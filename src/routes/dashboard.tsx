@@ -457,6 +457,15 @@ function Dashboard() {
     setProgress(0);
   }, [track.id]);
 
+  useEffect(() => {
+    if (!focus) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFocus(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focus]);
+
   if (focus) {
     return (
       <>
