@@ -114,6 +114,7 @@ function Dashboard() {
   const spotifyDeviceIdRef = useRef<string | null>(null);
   const pendingSpotifyTrackRef = useRef<string | null>(null);
   const spotifyCommandRef = useRef(false);
+  const trackChangePendingRef = useRef(false);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -161,7 +162,12 @@ function Dashboard() {
           if (!spotifyCommandRef.current && typeof state.paused === "boolean") {
             setPlaying(!state.paused);
           }
-          if (state.duration > 0) setProgress(Math.floor(state.position / 1000));
+          if (state.duration > 0) {
+            setProgress(Math.floor(state.position / 1000));
+          }
+          if (state.currentTrackUri && state.currentTrackUri === track.uri) {
+            trackChangePendingRef.current = false;
+          }
         }, volume);
 
         spotifyPlayerRef.current = player;
@@ -246,13 +252,6 @@ function Dashboard() {
     spotifyPlayerRef.current?.setVolume(muted ? 0 : volume).catch(() => undefined);
   }, [canUseSpotifyPlayback, muted, volume]);
 
-  // Lyric ticker — only advance while music is actually playing
-  useEffect(() => {
-    if (!playing || lyrics.length <= 1) return;
-    const id = setInterval(() => setLyricIdx((i) => (i + 1) % lyrics.length), 4200);
-    return () => clearInterval(id);
-  }, [playing, lyrics.length]);
-
   // Clock
   useEffect(() => {
     const tick = () => {
@@ -286,20 +285,21 @@ function Dashboard() {
     setSearchError(null);
     const id = setTimeout(async () => {
       try {
-        const r = await searchTracks(q, 12);
+        const r = await searchTracks(q, 12, profile?.country);
         setSearchResults(r.tracks.items.map(spotifyToTrack));
       } catch (e) {
         console.error("Search failed", e);
         setSearchResults([]);
-        setSearchError(e instanceof Error ? e.message : "Search failed.");
+        setSearchError("Couldn’t search Spotify right now. Please try a shorter title or artist name.");
       } finally {
         setSearching(false);
       }
     }, 350);
     return () => clearTimeout(id);
-  }, [searchQ, connected, searchOpen]);
+  }, [searchQ, connected, profile?.country, searchOpen]);
 
   const playSearchResult = (t: Track) => {
+    trackChangePendingRef.current = true;
     // Insert/replace at current index so the collection still flows
     setTracks((prev) => {
       const exists = prev.findIndex((x) => x.id === t.id);
@@ -323,9 +323,10 @@ function Dashboard() {
     if (!deviceId) return;
 
     const currentUri = playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current;
-    if (currentUri === trackUri && playerState?.isActive) return;
+    if (!trackChangePendingRef.current && currentUri === trackUri && playerState?.isActive) return;
 
     spotifyCommandRef.current = true;
+    trackChangePendingRef.current = false;
     pendingSpotifyTrackRef.current = trackUri;
     transferPlayback(deviceId, false)
       .then(() => playTrackOnDevice(deviceId, trackUri))
@@ -352,15 +353,22 @@ function Dashboard() {
 
       try {
         spotifyCommandRef.current = true;
-        await transferPlayback(deviceId, false);
+        const currentState = await player.getCurrentState();
+        const currentUri = currentState?.track_window?.current_track?.uri ?? playerState?.currentTrackUri;
+        const isPaused = currentState?.paused ?? playerState?.paused ?? true;
+        const isSameTrack = currentUri === track.uri;
+
         pendingSpotifyTrackRef.current = track.uri;
-        if ((playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current) !== track.uri || !playerState?.isActive) {
+        await transferPlayback(deviceId, false);
+
+        if (!isSameTrack) {
+          trackChangePendingRef.current = false;
           await playTrackOnDevice(deviceId, track.uri);
           setPlaying(true);
           return;
         }
 
-        if (playerState?.paused) {
+        if (isPaused) {
           await player.resume();
           setPlaying(true);
         } else {
@@ -399,6 +407,21 @@ function Dashboard() {
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const pct = Math.min(100, (progress / Math.max(1, duration)) * 100);
 
+  useEffect(() => {
+    if (lyrics.length <= 1) {
+      setLyricIdx(0);
+      return;
+    }
+
+    const safeProgress = Math.max(0, Math.min(progress, duration));
+    const nextIndex = Math.min(
+      lyrics.length - 1,
+      Math.floor((safeProgress / Math.max(1, duration)) * lyrics.length),
+    );
+
+    setLyricIdx(nextIndex);
+  }, [duration, lyrics.length, progress]);
+
   const onScrub = (s: number) => {
     setProgress(s);
     const a = audioRef.current;
@@ -428,6 +451,20 @@ function Dashboard() {
     },
     onMute: () => setMuted((m) => !m),
   };
+
+  useEffect(() => {
+    trackChangePendingRef.current = true;
+    setProgress(0);
+  }, [track.id]);
+
+  useEffect(() => {
+    if (!focus) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFocus(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focus]);
 
   if (focus) {
     return (
@@ -947,7 +984,7 @@ function FocusMode({
       <button
         onClick={onExit}
         aria-label="Exit focus"
-        className="absolute top-6 right-6 z-10 size-10 grid place-items-center rounded-full bg-card/60 backdrop-blur ring-1 ring-border text-muted-foreground hover:text-foreground"
+        className="absolute top-6 right-6 z-[70] size-10 grid place-items-center rounded-full bg-card/60 backdrop-blur ring-1 ring-border text-muted-foreground hover:text-foreground"
       >
         <Minimize2 className="size-4" />
       </button>
