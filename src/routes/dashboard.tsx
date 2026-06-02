@@ -316,7 +316,12 @@ function Dashboard() {
       } catch (e) {
         console.error("Search failed", e);
         setSearchResults([]);
-        setSearchError("Couldn’t search Spotify right now. Please try a shorter title or artist name.");
+        const message = e instanceof Error ? e.message : "";
+        if (/Not authenticated|Spotify 401/i.test(message)) {
+          setSearchError("Your Spotify session expired. Please connect Spotify again.");
+        } else {
+          setSearchError(null);
+        }
       } finally {
         setSearching(false);
       }
