@@ -184,6 +184,7 @@ export type SpotifyProfile = {
   id: string;
   display_name: string;
   email?: string;
+  country?: string;
   images?: { url: string }[];
   product?: string; // 'premium' | 'free'
 };
@@ -211,16 +212,28 @@ export const getRecentlyPlayed = (limit = 12) =>
     `/me/player/recently-played?limit=${limit}`,
   );
 
-export async function searchTracks(q: string, limit = 20) {
-  const query = q.trim();
+export async function searchTracks(q: string, limit = 20, market?: string) {
+  const query = q.replace(/\s+/g, " ").trim();
   if (query.length < 2) return { tracks: { items: [] } };
 
-  // Spotify requires limit 1-50; default 20 is the safest.
   const safeLimit = Math.min(50, Math.max(1, Math.floor(limit)));
+  const normalizedMarket = market?.trim().toUpperCase();
+  const validMarket = normalizedMarket && /^[A-Z]{2}$/.test(normalizedMarket)
+    ? normalizedMarket
+    : null;
+  const queryVariants = Array.from(
+    new Set([query, `track:${query}`, `"${query}"`, `track:"${query}"`]),
+  );
 
   const attempts = [
-    `/search?type=track&limit=${safeLimit}&q=${encodeURIComponent(query)}`,
-    `/search?type=track&limit=${safeLimit}&q=${encodeURIComponent(`track:${query}`)}`,
+    ...queryVariants.flatMap((value) =>
+      validMarket
+        ? [`/search?type=track&limit=${safeLimit}&market=${validMarket}&q=${encodeURIComponent(value)}`]
+        : [],
+    ),
+    ...queryVariants.map(
+      (value) => `/search?type=track&limit=${safeLimit}&q=${encodeURIComponent(value)}`,
+    ),
   ];
 
   let lastResult: { tracks: { items: SpotifyTrack[] } } | null = null;
@@ -255,6 +268,7 @@ export type SpotifyPlayerState = {
 export type SpotifyWebPlaybackPlayer = {
   connect: () => Promise<boolean>;
   disconnect: () => void;
+  getCurrentState: () => Promise<any>;
   togglePlay: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
