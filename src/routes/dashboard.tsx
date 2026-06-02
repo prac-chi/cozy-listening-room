@@ -478,6 +478,7 @@ function Dashboard() {
   useEffect(() => {
     trackChangePendingRef.current = true;
     setProgress(0);
+    progressBeforePauseRef.current = 0;
   }, [track.id]);
 
   useEffect(() => {
