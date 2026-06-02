@@ -984,7 +984,7 @@ function FocusMode({
       <button
         onClick={onExit}
         aria-label="Exit focus"
-        className="absolute top-6 right-6 z-10 size-10 grid place-items-center rounded-full bg-card/60 backdrop-blur ring-1 ring-border text-muted-foreground hover:text-foreground"
+        className="absolute top-6 right-6 z-[70] size-10 grid place-items-center rounded-full bg-card/60 backdrop-blur ring-1 ring-border text-muted-foreground hover:text-foreground"
       >
         <Minimize2 className="size-4" />
       </button>
