@@ -287,6 +287,16 @@ function Dashboard() {
   };
   const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
 
+  const releaseSpotifyCommandLock = () => {
+    if (spotifyCommandTimeoutRef.current) {
+      window.clearTimeout(spotifyCommandTimeoutRef.current);
+    }
+    spotifyCommandTimeoutRef.current = window.setTimeout(() => {
+      spotifyCommandRef.current = false;
+      spotifyCommandTimeoutRef.current = null;
+    }, 900);
+  };
+
   // Search
   useEffect(() => {
     if (!connected || !searchOpen) return;
@@ -352,9 +362,7 @@ function Dashboard() {
         setPlaying(false);
       })
       .finally(() => {
-        window.setTimeout(() => {
-          spotifyCommandRef.current = false;
-        }, 300);
+        releaseSpotifyCommandLock();
       });
   }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive]);
 
@@ -375,6 +383,7 @@ function Dashboard() {
         const isSameTrack = currentUri === track.uri;
 
         pendingSpotifyTrackRef.current = track.uri;
+        progressBeforePauseRef.current = progress;
         await transferPlayback(deviceId, false);
 
         if (!isSameTrack) {
@@ -395,9 +404,7 @@ function Dashboard() {
         pendingSpotifyTrackRef.current = null;
         setPlayerError(error instanceof Error ? error.message : "Could not control Spotify playback.");
       } finally {
-        window.setTimeout(() => {
-          spotifyCommandRef.current = false;
-        }, 300);
+        releaseSpotifyCommandLock();
       }
       return;
     }
