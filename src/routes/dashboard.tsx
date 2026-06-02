@@ -115,6 +115,8 @@ function Dashboard() {
   const pendingSpotifyTrackRef = useRef<string | null>(null);
   const spotifyCommandRef = useRef(false);
   const trackChangePendingRef = useRef(false);
+  const spotifyCommandTimeoutRef = useRef<number | null>(null);
+  const progressBeforePauseRef = useRef(0);
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -152,18 +154,31 @@ function Dashboard() {
           if (state.currentTrackUri) {
             pendingSpotifyTrackRef.current = state.currentTrackUri;
           }
+          const nextPositionMs = typeof state.position === "number"
+            ? state.position
+            : progressBeforePauseRef.current * 1000;
+          const nextDurationMs = state.duration > 0
+            ? state.duration
+            : Math.max(track.duration * 1000, 1);
+          const isMatchingTrack = state.currentTrackUri === track.uri;
+
           setPlayerState({
             ...state,
             deviceId: resolvedDeviceId,
+            position: nextPositionMs,
+            duration: nextDurationMs,
           });
           setPlayerReady(state.isReady || Boolean(resolvedDeviceId));
           if (state.error) setPlayerError(state.error);
           else setPlayerError(null);
-          if (!spotifyCommandRef.current && typeof state.paused === "boolean") {
+          if (typeof state.position === "number") {
+            progressBeforePauseRef.current = Math.max(0, Math.floor(state.position / 1000));
+          }
+          if (!spotifyCommandRef.current && isMatchingTrack && typeof state.paused === "boolean") {
             setPlaying(!state.paused);
           }
-          if (state.duration > 0) {
-            setProgress(Math.floor(state.position / 1000));
+          if (isMatchingTrack) {
+            setProgress(Math.max(0, Math.floor(nextPositionMs / 1000)));
           }
           if (state.currentTrackUri && state.currentTrackUri === track.uri) {
             trackChangePendingRef.current = false;
@@ -180,6 +195,7 @@ function Dashboard() {
     return () => {
       cancelled = true;
       spotifyCommandRef.current = false;
+      if (spotifyCommandTimeoutRef.current) window.clearTimeout(spotifyCommandTimeoutRef.current);
       pendingSpotifyTrackRef.current = null;
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
@@ -271,6 +287,16 @@ function Dashboard() {
   };
   const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
 
+  const releaseSpotifyCommandLock = () => {
+    if (spotifyCommandTimeoutRef.current) {
+      window.clearTimeout(spotifyCommandTimeoutRef.current);
+    }
+    spotifyCommandTimeoutRef.current = window.setTimeout(() => {
+      spotifyCommandRef.current = false;
+      spotifyCommandTimeoutRef.current = null;
+    }, 900);
+  };
+
   // Search
   useEffect(() => {
     if (!connected || !searchOpen) return;
@@ -290,7 +316,12 @@ function Dashboard() {
       } catch (e) {
         console.error("Search failed", e);
         setSearchResults([]);
-        setSearchError("Couldn’t search Spotify right now. Please try a shorter title or artist name.");
+        const message = e instanceof Error ? e.message : "";
+        if (/Not authenticated|Spotify 401/i.test(message)) {
+          setSearchError("Your Spotify session expired. Please connect Spotify again.");
+        } else {
+          setSearchError(null);
+        }
       } finally {
         setSearching(false);
       }
@@ -336,9 +367,7 @@ function Dashboard() {
         setPlaying(false);
       })
       .finally(() => {
-        window.setTimeout(() => {
-          spotifyCommandRef.current = false;
-        }, 300);
+        releaseSpotifyCommandLock();
       });
   }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive]);
 
@@ -359,6 +388,7 @@ function Dashboard() {
         const isSameTrack = currentUri === track.uri;
 
         pendingSpotifyTrackRef.current = track.uri;
+        progressBeforePauseRef.current = progress;
         await transferPlayback(deviceId, false);
 
         if (!isSameTrack) {
@@ -379,9 +409,7 @@ function Dashboard() {
         pendingSpotifyTrackRef.current = null;
         setPlayerError(error instanceof Error ? error.message : "Could not control Spotify playback.");
       } finally {
-        window.setTimeout(() => {
-          spotifyCommandRef.current = false;
-        }, 300);
+        releaseSpotifyCommandLock();
       }
       return;
     }
@@ -455,6 +483,7 @@ function Dashboard() {
   useEffect(() => {
     trackChangePendingRef.current = true;
     setProgress(0);
+    progressBeforePauseRef.current = 0;
   }, [track.id]);
 
   useEffect(() => {
@@ -825,7 +854,7 @@ function Dashboard() {
               {!searching && searchError && (
                 <p className="text-xs text-destructive px-2 py-3 break-words">{searchError}</p>
               )}
-              {!searching && searchResults.length === 0 && searchQ && (
+              {!searching && !searchError && searchResults.length === 0 && searchQ && (
                 <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title, artist, or a shorter search.</p>
               )}
               {searchResults.map((t) => (
