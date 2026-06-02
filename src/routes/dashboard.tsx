@@ -108,7 +108,6 @@ function Dashboard() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
   const [liveAccent, setLiveAccent] = useState<string | null>(null);
-  const [lyricAnchorLine, setLyricAnchorLine] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
@@ -191,7 +190,6 @@ function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     setLyricIdx(0);
-    setLyricAnchorLine(0);
     setLyrics(["Loading lyrics…"]);
     fetchLyrics(track.artist, track.title).then((l) => {
       if (cancelled) return;
@@ -253,25 +251,6 @@ function Dashboard() {
     if (!canUseSpotifyPlayback) return;
     spotifyPlayerRef.current?.setVolume(muted ? 0 : volume).catch(() => undefined);
   }, [canUseSpotifyPlayback, muted, volume]);
-
-  useEffect(() => {
-    if (lyrics.length <= 1) {
-      setLyricIdx(0);
-      return;
-    }
-
-    const totalDuration = Math.max(1, duration);
-    const safeProgress = Math.max(0, Math.min(progress, totalDuration));
-    const nextIndex = Math.min(
-      lyrics.length - 1,
-      Math.floor((safeProgress / totalDuration) * lyrics.length),
-    );
-
-    setLyricIdx(nextIndex);
-    if (nextIndex > lyricAnchorLine || safeProgress === 0) {
-      setLyricAnchorLine(nextIndex);
-    }
-  }, [duration, lyrics.length, progress, lyricAnchorLine]);
 
   // Clock
   useEffect(() => {
@@ -427,6 +406,21 @@ function Dashboard() {
       : track.duration;
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const pct = Math.min(100, (progress / Math.max(1, duration)) * 100);
+
+  useEffect(() => {
+    if (lyrics.length <= 1) {
+      setLyricIdx(0);
+      return;
+    }
+
+    const safeProgress = Math.max(0, Math.min(progress, duration));
+    const nextIndex = Math.min(
+      lyrics.length - 1,
+      Math.floor((safeProgress / Math.max(1, duration)) * lyrics.length),
+    );
+
+    setLyricIdx(nextIndex);
+  }, [duration, lyrics.length, progress]);
 
   const onScrub = (s: number) => {
     setProgress(s);
