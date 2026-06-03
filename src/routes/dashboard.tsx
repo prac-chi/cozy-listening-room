@@ -22,6 +22,7 @@ import polaroidRain from "@/assets/polaroid-rain.jpg";
 import {
   beginSpotifyLogin,
   createSpotifyPlayback,
+  getFallbackTracks,
   getProfile,
   getTopTracks,
   isSpotifyConnected,
@@ -140,6 +141,23 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (connected) return;
+    let cancelled = false;
+
+    getFallbackTracks(12)
+      .then((items) => {
+        if (cancelled || !items.length) return;
+        setTracks(items.map(spotifyToTrack));
+        setTrackIdx(0);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connected]);
+
+  useEffect(() => {
     if (!connected || profile?.product !== "premium") return;
     let cancelled = false;
 
@@ -254,13 +272,12 @@ function Dashboard() {
     if (canUsePreview && track.previewUrl) {
       a.src = track.previewUrl;
       a.load();
-      if (playing) a.play().catch(() => setPlaying(false));
     } else {
       a.removeAttribute("src");
       a.load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track.id, track.previewUrl, canUsePreview, playing]);
+  }, [track.id, track.previewUrl, canUsePreview]);
 
   // Play/pause sync
   useEffect(() => {
@@ -303,7 +320,7 @@ function Dashboard() {
 
   // Search
   useEffect(() => {
-    if (!connected || !searchOpen) return;
+    if (!searchOpen) return;
     const q = searchQ.trim();
     if (!q) {
       setSearchResults([]);
