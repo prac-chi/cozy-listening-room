@@ -343,6 +343,10 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
   if (query.length < 2) return { tracks: { items: [] } };
 
   const safeLimit = Math.min(50, Math.max(1, Math.floor(limit)));
+  if (!isSpotifyConnected()) {
+    return { tracks: { items: await searchItunesTracks(query, safeLimit) } };
+  }
+
   const normalizedMarket = market?.trim().toUpperCase();
   const validMarket = normalizedMarket && /^[A-Z]{2}$/.test(normalizedMarket)
     ? normalizedMarket
@@ -385,17 +389,17 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
     }
   }
 
+  const fallbackItems = await searchItunesTracks(query, safeLimit);
+  if (fallbackItems.length) {
+    return { tracks: { items: fallbackItems } };
+  }
+
   if (
     !lastResult
     && lastError instanceof Error
     && /Not authenticated|Spotify 401/i.test(lastError.message)
   ) {
-    throw lastError;
-  }
-
-  const fallbackItems = await searchItunesTracks(query, safeLimit);
-  if (fallbackItems.length) {
-    return { tracks: { items: fallbackItems } };
+    return { tracks: { items: [] } };
   }
 
   return lastResult ?? { tracks: { items: [] } };
