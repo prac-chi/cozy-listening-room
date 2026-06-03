@@ -25,6 +25,7 @@ import {
   getProfile,
   getTopTracks,
   isSpotifyConnected,
+  lookupTrackPreview,
   logoutSpotify,
   playTrackOnDevice,
   searchTracks,
@@ -113,10 +114,7 @@ function Dashboard() {
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const spotifyDeviceIdRef = useRef<string | null>(null);
   const pendingSpotifyTrackRef = useRef<string | null>(null);
-  const spotifyCommandRef = useRef(false);
-  const trackChangePendingRef = useRef(false);
-  const spotifyCommandTimeoutRef = useRef<number | null>(null);
-  const progressBeforePauseRef = useRef(0);
+  const previewLookupRef = useRef<Map<string, string | null>>(new Map());
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
 
@@ -154,9 +152,7 @@ function Dashboard() {
           if (state.currentTrackUri) {
             pendingSpotifyTrackRef.current = state.currentTrackUri;
           }
-          const nextPositionMs = typeof state.position === "number"
-            ? state.position
-            : progressBeforePauseRef.current * 1000;
+          const nextPositionMs = typeof state.position === "number" ? state.position : 0;
           const nextDurationMs = state.duration > 0
             ? state.duration
             : Math.max(track.duration * 1000, 1);
@@ -171,19 +167,15 @@ function Dashboard() {
           setPlayerReady(state.isReady || Boolean(resolvedDeviceId));
           if (state.error) setPlayerError(state.error);
           else setPlayerError(null);
-          if (typeof state.position === "number") {
-            progressBeforePauseRef.current = Math.max(0, Math.floor(state.position / 1000));
-          }
-          if (!spotifyCommandRef.current && isMatchingTrack && typeof state.paused === "boolean") {
+          if (isMatchingTrack && typeof state.paused === "boolean") {
             setPlaying(!state.paused);
           }
           if (isMatchingTrack) {
             setProgress(Math.max(0, Math.floor(nextPositionMs / 1000)));
           }
-          if (state.currentTrackUri && state.currentTrackUri === track.uri) {
-            trackChangePendingRef.current = false;
-          }
         }, volume);
+
+        await player.activateElement?.();
 
         spotifyPlayerRef.current = player;
       } catch (error) {
@@ -194,8 +186,6 @@ function Dashboard() {
 
     return () => {
       cancelled = true;
-      spotifyCommandRef.current = false;
-      if (spotifyCommandTimeoutRef.current) window.clearTimeout(spotifyCommandTimeoutRef.current);
       pendingSpotifyTrackRef.current = null;
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
@@ -215,6 +205,30 @@ function Dashboard() {
       cancelled = true;
     };
   }, [track.id, track.artist, track.title]);
+
+  useEffect(() => {
+    if (track.previewUrl || track.uri) return;
+    const key = `${track.artist}::${track.title}`.toLowerCase();
+    if (previewLookupRef.current.has(key)) return;
+
+    previewLookupRef.current.set(key, null);
+    lookupTrackPreview(track.artist, track.title).then((match) => {
+      if (!match?.previewUrl) return;
+
+      previewLookupRef.current.set(key, match.previewUrl);
+      setTracks((prev) => prev.map((item) => {
+        if (item.id !== track.id) return item;
+        return {
+          ...item,
+          previewUrl: item.previewUrl ?? match.previewUrl,
+          art: item.art || match.art || item.art,
+          album: item.album || match.album || item.album,
+          duration: match.durationMs ? Math.max(1, Math.round(match.durationMs / 1000)) : item.duration,
+          externalUrl: item.externalUrl ?? match.externalUrl,
+        };
+      }));
+    });
+  }, [track.album, track.artist, track.id, track.previewUrl, track.title, track.uri]);
 
   // Extract dominant color from album art so the room glows with the song
   useEffect(() => {
@@ -287,16 +301,6 @@ function Dashboard() {
   };
   const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
 
-  const releaseSpotifyCommandLock = () => {
-    if (spotifyCommandTimeoutRef.current) {
-      window.clearTimeout(spotifyCommandTimeoutRef.current);
-    }
-    spotifyCommandTimeoutRef.current = window.setTimeout(() => {
-      spotifyCommandRef.current = false;
-      spotifyCommandTimeoutRef.current = null;
-    }, 900);
-  };
-
   // Search
   useEffect(() => {
     if (!connected || !searchOpen) return;
@@ -320,7 +324,7 @@ function Dashboard() {
         if (/Not authenticated|Spotify 401/i.test(message)) {
           setSearchError("Your Spotify session expired. Please connect Spotify again.");
         } else {
-          setSearchError(null);
+          setSearchError("Search is temporarily unavailable. Try again in a moment.");
         }
       } finally {
         setSearching(false);
@@ -330,7 +334,6 @@ function Dashboard() {
   }, [searchQ, connected, profile?.country, searchOpen]);
 
   const playSearchResult = (t: Track) => {
-    trackChangePendingRef.current = true;
     // Insert/replace at current index so the collection still flows
     setTracks((prev) => {
       const exists = prev.findIndex((x) => x.id === t.id);
@@ -348,16 +351,14 @@ function Dashboard() {
   };
 
   useEffect(() => {
-    if (!canUseSpotifyPlayback || !playing || !track.uri || spotifyCommandRef.current) return;
+    if (!canUseSpotifyPlayback || !playing || !track.uri) return;
     const trackUri = track.uri;
     const deviceId = playerState?.deviceId;
     if (!deviceId) return;
 
     const currentUri = playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current;
-    if (!trackChangePendingRef.current && currentUri === trackUri && playerState?.isActive) return;
+    if (currentUri === trackUri && playerState?.isActive && playerState?.paused === false) return;
 
-    spotifyCommandRef.current = true;
-    trackChangePendingRef.current = false;
     pendingSpotifyTrackRef.current = trackUri;
     transferPlayback(deviceId, false)
       .then(() => playTrackOnDevice(deviceId, trackUri))
@@ -365,11 +366,8 @@ function Dashboard() {
         pendingSpotifyTrackRef.current = null;
         setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
         setPlaying(false);
-      })
-      .finally(() => {
-        releaseSpotifyCommandLock();
       });
-  }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive]);
+  }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive, playerState?.paused]);
 
   const togglePlayback = async () => {
     if (canUseSpotifyPlayback) {
@@ -381,18 +379,16 @@ function Dashboard() {
       }
 
       try {
-        spotifyCommandRef.current = true;
+        await player.activateElement?.();
         const currentState = await player.getCurrentState();
         const currentUri = currentState?.track_window?.current_track?.uri ?? playerState?.currentTrackUri;
         const isPaused = currentState?.paused ?? playerState?.paused ?? true;
         const isSameTrack = currentUri === track.uri;
 
         pendingSpotifyTrackRef.current = track.uri;
-        progressBeforePauseRef.current = progress;
         await transferPlayback(deviceId, false);
 
         if (!isSameTrack) {
-          trackChangePendingRef.current = false;
           await playTrackOnDevice(deviceId, track.uri);
           setPlaying(true);
           return;
@@ -408,8 +404,6 @@ function Dashboard() {
       } catch (error) {
         pendingSpotifyTrackRef.current = null;
         setPlayerError(error instanceof Error ? error.message : "Could not control Spotify playback.");
-      } finally {
-        releaseSpotifyCommandLock();
       }
       return;
     }
@@ -481,10 +475,9 @@ function Dashboard() {
   };
 
   useEffect(() => {
-    trackChangePendingRef.current = true;
+    pendingSpotifyTrackRef.current = track.uri ?? null;
     setProgress(0);
-    progressBeforePauseRef.current = 0;
-  }, [track.id]);
+  }, [track.id, track.uri]);
 
   useEffect(() => {
     if (!focus) return;
