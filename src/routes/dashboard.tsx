@@ -596,15 +596,13 @@ function Dashboard() {
           )}
 
           {/* Search button */}
-          {connected && (
-            <button
-              onClick={() => setSearchOpen(true)}
-              className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-card/60 ring-1 ring-border text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Search className="size-3.5" />
-              Search any song…
-            </button>
-          )}
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-card/60 ring-1 ring-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Search className="size-3.5" />
+            Search any song…
+          </button>
 
           <div className="space-y-3">
             <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
