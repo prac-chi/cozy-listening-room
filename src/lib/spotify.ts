@@ -217,6 +217,115 @@ export type SpotifyTrack = {
   external_urls?: { spotify?: string };
 };
 
+type ItunesSong = {
+  trackId?: number;
+  trackName?: string;
+  artistName?: string;
+  collectionName?: string;
+  previewUrl?: string;
+  artworkUrl100?: string;
+  trackTimeMillis?: number;
+  trackViewUrl?: string;
+};
+
+type TrackPreviewMatch = {
+  previewUrl: string;
+  art?: string;
+  durationMs?: number;
+  album?: string;
+  externalUrl?: string;
+};
+
+const previewLookupCache = new Map<string, TrackPreviewMatch | null>();
+
+function normalizeSearchValue(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function searchItunesTracks(query: string, limit: number) {
+  const res = await fetch(
+    `https://itunes.apple.com/search?media=music&entity=song&limit=${limit}&term=${encodeURIComponent(query)}`,
+  );
+  if (!res.ok) return [] as SpotifyTrack[];
+
+  const data: { results?: ItunesSong[] } = await res.json();
+  return (data.results ?? [])
+    .filter((item) => item.previewUrl && item.trackName && item.artistName)
+    .map((item, index) => ({
+      id: `it-${item.trackId ?? `${normalizeSearchValue(item.artistName ?? "artist")}-${normalizeSearchValue(item.trackName ?? `track-${index}`)}`}`,
+      name: item.trackName ?? "Unknown track",
+      uri: "",
+      duration_ms: item.trackTimeMillis ?? 30_000,
+      preview_url: item.previewUrl ?? null,
+      artists: [{ name: item.artistName ?? "Unknown artist" }],
+      album: {
+        name: item.collectionName ?? "Single",
+        images: item.artworkUrl100
+          ? [{ url: item.artworkUrl100, width: 100, height: 100 }]
+          : [],
+      },
+      external_urls: { spotify: item.trackViewUrl },
+    }));
+}
+
+export async function getFallbackTracks(limit = 12) {
+  const seeds = ["The Weeknd", "Taylor Swift", "Drake", "Billie Eilish", "SZA"];
+  const batches = await Promise.all(seeds.map((seed) => searchItunesTracks(seed, Math.max(3, Math.ceil(limit / seeds.length)))));
+  const seen = new Set<string>();
+  const items: SpotifyTrack[] = [];
+
+  for (const batch of batches) {
+    for (const track of batch) {
+      if (seen.has(track.id)) continue;
+      seen.add(track.id);
+      items.push(track);
+      if (items.length >= limit) return items;
+    }
+  }
+
+  return items;
+}
+
+export async function lookupTrackPreview(artist: string, title: string): Promise<TrackPreviewMatch | null> {
+  const cacheKey = `${artist}::${title}`.toLowerCase();
+  if (previewLookupCache.has(cacheKey)) return previewLookupCache.get(cacheKey) ?? null;
+
+  try {
+    const results = await searchItunesTracks(`${artist} ${title}`, 6);
+    const normalizedTitle = normalizeSearchValue(title);
+    const normalizedArtist = normalizeSearchValue(artist.split(",")[0] ?? artist);
+
+    const match = results.find((result) => {
+      const resultTitle = normalizeSearchValue(result.name);
+      const resultArtist = normalizeSearchValue(result.artists[0]?.name ?? "");
+      return (
+        (resultTitle.includes(normalizedTitle) || normalizedTitle.includes(resultTitle))
+        && (resultArtist.includes(normalizedArtist) || normalizedArtist.includes(resultArtist))
+      );
+    }) ?? results[0];
+
+    const preview = match?.preview_url
+      ? {
+          previewUrl: match.preview_url,
+          art: match.album.images[0]?.url,
+          durationMs: match.duration_ms,
+          album: match.album.name,
+          externalUrl: match.external_urls?.spotify,
+        }
+      : null;
+
+    previewLookupCache.set(cacheKey, preview);
+    return preview;
+  } catch {
+    previewLookupCache.set(cacheKey, null);
+    return null;
+  }
+}
+
 export const getProfile = () => spotifyFetch<SpotifyProfile>("/me");
 
 export const getTopTracks = (limit = 12) =>
@@ -234,6 +343,10 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
   if (query.length < 2) return { tracks: { items: [] } };
 
   const safeLimit = Math.min(50, Math.max(1, Math.floor(limit)));
+  if (!isSpotifyConnected()) {
+    return { tracks: { items: await searchItunesTracks(query, safeLimit) } };
+  }
+
   const normalizedMarket = market?.trim().toUpperCase();
   const validMarket = normalizedMarket && /^[A-Z]{2}$/.test(normalizedMarket)
     ? normalizedMarket
@@ -276,13 +389,19 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
     }
   }
 
+  const fallbackItems = await searchItunesTracks(query, safeLimit);
+  if (fallbackItems.length) {
+    return { tracks: { items: fallbackItems } };
+  }
+
   if (
     !lastResult
     && lastError instanceof Error
     && /Not authenticated|Spotify 401/i.test(lastError.message)
   ) {
-    throw lastError;
+    return { tracks: { items: [] } };
   }
+
   return lastResult ?? { tracks: { items: [] } };
 }
 
@@ -299,6 +418,7 @@ export type SpotifyPlayerState = {
 };
 
 export type SpotifyWebPlaybackPlayer = {
+  activateElement?: () => Promise<void>;
   connect: () => Promise<boolean>;
   disconnect: () => void;
   getCurrentState: () => Promise<any>;
