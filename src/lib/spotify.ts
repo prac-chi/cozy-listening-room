@@ -272,6 +272,24 @@ async function searchItunesTracks(query: string, limit: number) {
     }));
 }
 
+export async function getFallbackTracks(limit = 12) {
+  const seeds = ["The Weeknd", "Taylor Swift", "Drake", "Billie Eilish", "SZA"];
+  const batches = await Promise.all(seeds.map((seed) => searchItunesTracks(seed, Math.max(3, Math.ceil(limit / seeds.length)))));
+  const seen = new Set<string>();
+  const items: SpotifyTrack[] = [];
+
+  for (const batch of batches) {
+    for (const track of batch) {
+      if (seen.has(track.id)) continue;
+      seen.add(track.id);
+      items.push(track);
+      if (items.length >= limit) return items;
+    }
+  }
+
+  return items;
+}
+
 export async function lookupTrackPreview(artist: string, title: string): Promise<TrackPreviewMatch | null> {
   const cacheKey = `${artist}::${title}`.toLowerCase();
   if (previewLookupCache.has(cacheKey)) return previewLookupCache.get(cacheKey) ?? null;
