@@ -110,6 +110,7 @@ function Dashboard() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
   const [liveAccent, setLiveAccent] = useState<string | null>(null);
+  const [forcePreviewByTrackId, setForcePreviewByTrackId] = useState<Record<string, true>>({});
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
@@ -117,7 +118,21 @@ function Dashboard() {
   const pendingSpotifyTrackRef = useRef<string | null>(null);
   const previewLookupRef = useRef<Map<string, string | null>>(new Map());
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
+  const activeTrackRef = useRef(track);
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
+  const hasSpotifySession = connected && profile?.product === "premium";
+  const forcePreviewForCurrentTrack = Boolean(forcePreviewByTrackId[track.id]);
+
+  const enablePreviewFallback = (target: Track, message?: string) => {
+    setForcePreviewByTrackId((prev) => (prev[target.id] ? prev : { ...prev, [target.id]: true }));
+    setPlayerError(message ?? (target.previewUrl
+      ? "Spotify playback unavailable — playing preview instead."
+      : "Spotify playback unavailable for this song."));
+  };
+
+  useEffect(() => {
+    activeTrackRef.current = track;
+  }, [track]);
 
   // Spotify boot
   useEffect(() => {
@@ -158,23 +173,26 @@ function Dashboard() {
   }, [connected]);
 
   useEffect(() => {
-    if (!connected || profile?.product !== "premium") return;
+    if (!hasSpotifySession) return;
     let cancelled = false;
 
     (async () => {
       try {
         const player = await createSpotifyPlayback((state) => {
           if (cancelled) return;
+          const activeTrack = activeTrackRef.current;
           const resolvedDeviceId = state.deviceId ?? spotifyDeviceIdRef.current ?? null;
           spotifyDeviceIdRef.current = resolvedDeviceId;
           if (state.currentTrackUri) {
-            pendingSpotifyTrackRef.current = state.currentTrackUri;
+            pendingSpotifyTrackRef.current = state.currentTrackUri === pendingSpotifyTrackRef.current
+              ? null
+              : pendingSpotifyTrackRef.current;
           }
           const nextPositionMs = typeof state.position === "number" ? state.position : 0;
           const nextDurationMs = state.duration > 0
             ? state.duration
-            : Math.max(track.duration * 1000, 1);
-          const isMatchingTrack = state.currentTrackUri === track.uri;
+            : Math.max(activeTrack.duration * 1000, 1);
+          const isMatchingTrack = state.currentTrackUri === activeTrack.uri;
 
           setPlayerState({
             ...state,
@@ -208,7 +226,7 @@ function Dashboard() {
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
     };
-  }, [connected, profile?.product]);
+  }, [hasSpotifySession, volume]);
 
   // Real lyrics fetch on track change
   useEffect(() => {
