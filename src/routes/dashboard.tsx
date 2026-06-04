@@ -332,6 +332,24 @@ function Dashboard() {
     if (!a) return;
     setProgress(Math.floor(a.currentTime));
   };
+  const onLoadedMetadata = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    setProgress(Math.floor(a.currentTime || 0));
+  };
+  const onAudioPlay = () => {
+    setPlayerError(null);
+    setPlaying(true);
+  };
+  const onAudioPause = () => {
+    const a = audioRef.current;
+    if (!a || a.ended) return;
+    setPlaying(false);
+  };
+  const onAudioError = () => {
+    setPlaying(false);
+    setPlayerError("This preview could not be loaded.");
+  };
   const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
   // Search
   useEffect(() => {
