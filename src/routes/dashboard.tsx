@@ -483,6 +483,14 @@ function Dashboard() {
   const pct = Math.min(100, (progress / Math.max(1, duration)) * 100);
 
   useEffect(() => {
+    if (!playing || !canUseSpotifyPlayback) return;
+    const id = window.setInterval(() => {
+      setProgress((p) => (p < duration ? p + 1 : p));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [playing, canUseSpotifyPlayback, duration]);
+
+  useEffect(() => {
     if (lyrics.length <= 1) {
       setLyricIdx(0);
       return;
