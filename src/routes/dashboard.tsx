@@ -333,16 +333,6 @@ function Dashboard() {
     setProgress(Math.floor(a.currentTime));
   };
   const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
-  // Smoothly advance progress for Spotify playback since SDK updates are infrequent
-  useEffect(() => {
-    if (!playing || !canUseSpotifyPlayback) return;
-    const id = setInterval(() => {
-      setProgress((p) => (p < duration ? p + 1 : p));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [playing, canUseSpotifyPlayback, duration]);
-
-
   // Search
   useEffect(() => {
     if (!searchOpen) return;
