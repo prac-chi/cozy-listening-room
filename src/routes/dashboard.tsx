@@ -261,7 +261,7 @@ function Dashboard() {
     };
   }, [track.art]);
 
-  const canUseSpotifyPlayback = connected && profile?.product === "premium";
+  const canUseSpotifyPlayback = connected && profile?.product === "premium" && Boolean(track.uri);
   const canUsePreview = Boolean(track.previewUrl) && !canUseSpotifyPlayback;
 
   // Audio element: load new src on track change
