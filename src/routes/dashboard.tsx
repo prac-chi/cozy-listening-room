@@ -366,6 +366,10 @@ function Dashboard() {
   }, [searchQ, connected, profile?.country, searchOpen]);
 
   const playSearchResult = (t: Track) => {
+    if (t.previewUrl) {
+      setForcePreviewByTrackId((prev) => ({ ...prev, [t.id]: true }));
+      setPlayerError(null);
+    }
     // Insert/replace at current index so the collection still flows
     setTracks((prev) => {
       const exists = prev.findIndex((x) => x.id === t.id);
@@ -413,8 +417,14 @@ function Dashboard() {
       .then(() => playTrackOnDevice(deviceId, trackUri))
       .catch((error) => {
         pendingSpotifyTrackRef.current = null;
-        setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
-        setPlaying(false);
+        const message = error instanceof Error ? error.message : "Could not start Spotify playback.";
+        if (activeTrackRef.current.id === track.id && track.previewUrl) {
+          enablePreviewFallback(track, message);
+          setPlaying(true);
+        } else {
+          setPlayerError(message);
+          setPlaying(false);
+        }
       });
   }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive]);
 
@@ -428,6 +438,7 @@ function Dashboard() {
       }
 
       try {
+        setPlayerError(null);
         await player.activateElement?.();
         const currentState = await player.getCurrentState();
         const currentUri = currentState?.track_window?.current_track?.uri ?? playerState?.currentTrackUri;
@@ -456,7 +467,13 @@ function Dashboard() {
         }
       } catch (error) {
         pendingSpotifyTrackRef.current = null;
-        setPlayerError(error instanceof Error ? error.message : "Could not control Spotify playback.");
+        const message = error instanceof Error ? error.message : "Could not control Spotify playback.";
+        if (track.previewUrl) {
+          enablePreviewFallback(track, message);
+          setPlaying(true);
+        } else {
+          setPlayerError(message);
+        }
       }
       return;
     }
