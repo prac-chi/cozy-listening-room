@@ -317,6 +317,15 @@ function Dashboard() {
     setProgress(Math.floor(a.currentTime));
   };
   const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
+  // Smoothly advance progress for Spotify playback since SDK updates are infrequent
+  useEffect(() => {
+    if (!playing || !canUseSpotifyPlayback) return;
+    const id = setInterval(() => {
+      setProgress((p) => (p < duration ? p + 1 : p));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [playing, canUseSpotifyPlayback, duration]);
+
 
   // Search
   useEffect(() => {
@@ -355,6 +364,14 @@ function Dashboard() {
     setTracks((prev) => {
       const exists = prev.findIndex((x) => x.id === t.id);
       if (exists >= 0) {
+        if (exists === trackIdx) {
+          setProgress(0);
+          if (canUseSpotifyPlayback) {
+            spotifyPlayerRef.current?.seek(0).catch(() => undefined);
+          } else if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+          }
+        }
         setTrackIdx(exists);
         return prev;
       }
@@ -363,6 +380,7 @@ function Dashboard() {
       return next;
     });
     setPlaying(true);
+    setProgress(0);
     setSearchOpen(false);
     setSearchQ("");
   };
@@ -374,17 +392,25 @@ function Dashboard() {
     if (!deviceId) return;
 
     const currentUri = playerState?.currentTrackUri ?? pendingSpotifyTrackRef.current;
-    if (currentUri === trackUri && playerState?.isActive && playerState?.paused === false) return;
+    const isSameTrack = currentUri === trackUri;
+    
+    // If it is the same track and already active, let togglePlayback or SDK handle play/pause
+    if (isSameTrack && playerState?.isActive) return;
 
     pendingSpotifyTrackRef.current = trackUri;
-    transferPlayback(deviceId, false)
+    // Only transfer if not active
+    const transferPromise = playerState?.isActive 
+      ? Promise.resolve() 
+      : transferPlayback(deviceId, false);
+
+    transferPromise
       .then(() => playTrackOnDevice(deviceId, trackUri))
       .catch((error) => {
         pendingSpotifyTrackRef.current = null;
         setPlayerError(error instanceof Error ? error.message : "Could not start Spotify playback.");
         setPlaying(false);
       });
-  }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive, playerState?.paused]);
+  }, [canUseSpotifyPlayback, playing, track.uri, playerState?.deviceId, playerState?.currentTrackUri, playerState?.isActive]);
 
   const togglePlayback = async () => {
     if (canUseSpotifyPlayback) {
@@ -403,11 +429,15 @@ function Dashboard() {
         const isSameTrack = currentUri === track.uri;
 
         pendingSpotifyTrackRef.current = track.uri;
-        await transferPlayback(deviceId, false);
+        
+        if (!playerState?.isActive) {
+          await transferPlayback(deviceId, false);
+        }
 
         if (!isSameTrack) {
           await playTrackOnDevice(deviceId, track.uri);
           setPlaying(true);
+          setProgress(0);
           return;
         }
 
