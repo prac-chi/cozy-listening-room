@@ -589,6 +589,10 @@ function Dashboard() {
       <>
         <audio
           ref={audioRef}
+          onLoadedMetadata={onLoadedMetadata}
+          onPlay={onAudioPlay}
+          onPause={onAudioPause}
+          onError={onAudioError}
           onTimeUpdate={onTimeUpdate}
           onEnded={onEnded}
           preload="auto"
@@ -609,6 +613,10 @@ function Dashboard() {
     <div className="relative min-h-screen room-bg text-foreground overflow-hidden" style={roomStyle}>
       <audio
         ref={audioRef}
+        onLoadedMetadata={onLoadedMetadata}
+        onPlay={onAudioPlay}
+        onPause={onAudioPause}
+        onError={onAudioError}
         onTimeUpdate={onTimeUpdate}
         onEnded={onEnded}
         preload="auto"
