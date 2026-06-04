@@ -184,9 +184,7 @@ function Dashboard() {
           const resolvedDeviceId = state.deviceId ?? spotifyDeviceIdRef.current ?? null;
           spotifyDeviceIdRef.current = resolvedDeviceId;
           if (state.currentTrackUri) {
-            pendingSpotifyTrackRef.current = state.currentTrackUri === pendingSpotifyTrackRef.current
-              ? null
-              : pendingSpotifyTrackRef.current;
+            pendingSpotifyTrackRef.current = state.currentTrackUri;
           }
           const nextPositionMs = typeof state.position === "number" ? state.position : 0;
           const nextDurationMs = state.duration > 0
@@ -243,7 +241,7 @@ function Dashboard() {
   }, [track.id, track.artist, track.title]);
 
   useEffect(() => {
-    if (track.previewUrl || track.uri) return;
+    if (track.previewUrl) return;
     const key = `${track.artist}::${track.title}`.toLowerCase();
     if (previewLookupRef.current.has(key)) return;
 
@@ -279,8 +277,8 @@ function Dashboard() {
     };
   }, [track.art]);
 
-  const canUseSpotifyPlayback = connected && profile?.product === "premium" && Boolean(track.uri);
-  const canUsePreview = Boolean(track.previewUrl) && !canUseSpotifyPlayback;
+  const canUseSpotifyPlayback = hasSpotifySession && Boolean(track.uri) && !forcePreviewForCurrentTrack;
+  const canUsePreview = Boolean(track.previewUrl) && (!hasSpotifySession || forcePreviewForCurrentTrack || !track.uri);
 
   // Audio element: load new src on track change
   useEffect(() => {
@@ -313,9 +311,9 @@ function Dashboard() {
   }, [volume, muted]);
 
   useEffect(() => {
-    if (!canUseSpotifyPlayback) return;
+    if (!hasSpotifySession) return;
     spotifyPlayerRef.current?.setVolume(muted ? 0 : volume).catch(() => undefined);
-  }, [canUseSpotifyPlayback, muted, volume]);
+  }, [hasSpotifySession, muted, volume]);
 
   // Clock
   useEffect(() => {
