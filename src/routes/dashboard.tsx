@@ -361,7 +361,28 @@ function Dashboard() {
     setPlaying(false);
     setPlayerError("This preview could not be loaded.");
   };
-  const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
+  const pickNext = (dir: 1 | -1 = 1) => {
+    if (shuffle && tracks.length > 1) {
+      let n = trackIdx;
+      while (n === trackIdx) n = Math.floor(Math.random() * tracks.length);
+      return n;
+    }
+    return (trackIdx + dir + tracks.length) % tracks.length;
+  };
+  const onEnded = () => {
+    if (repeat === "one") {
+      const a = audioRef.current;
+      if (a) { a.currentTime = 0; a.play().catch(() => undefined); }
+      setProgress(0);
+      return;
+    }
+    const next = pickNext(1);
+    if (!shuffle && repeat === "off" && next === 0 && trackIdx === tracks.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    setTrackIdx(next);
+  };
   // Search
   useEffect(() => {
     if (!searchOpen) return;
