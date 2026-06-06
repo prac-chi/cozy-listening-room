@@ -604,14 +604,18 @@ function Dashboard() {
     muted,
     hasAudio: canUseSpotifyPlayback ? Boolean(track.uri && (playerReady || playerState?.deviceId)) : Boolean(track.previewUrl),
     onToggle: togglePlayback,
-    onPrev: () => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length),
-    onNext: () => setTrackIdx((i) => (i + 1) % tracks.length),
+    onPrev: () => setTrackIdx(pickNext(-1)),
+    onNext: () => setTrackIdx(pickNext(1)),
     onScrub,
     onVolume: (v: number) => {
       setVolume(v);
       if (v > 0) setMuted(false);
     },
     onMute: () => setMuted((m) => !m),
+    shuffle,
+    onShuffle: () => setShuffle((s) => !s),
+    repeat,
+    onRepeat: () => setRepeat((r) => (r === "off" ? "all" : r === "all" ? "one" : "off")),
   };
 
   useEffect(() => {
