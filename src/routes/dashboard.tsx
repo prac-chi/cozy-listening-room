@@ -416,10 +416,21 @@ function Dashboard() {
   }, [searchQ, connected, profile?.country, searchOpen]);
 
   const playSearchResult = (t: Track) => {
-    if (t.previewUrl) {
-      setForcePreviewByTrackId((prev) => ({ ...prev, [t.id]: true }));
-      setPlayerError(null);
-    }
+    setForcePreviewByTrackId((prev) => {
+      if (hasSpotifySession && t.uri) {
+        if (!prev[t.id]) return prev;
+        const next = { ...prev };
+        delete next[t.id];
+        return next;
+      }
+
+      if (t.previewUrl && !prev[t.id]) {
+        return { ...prev, [t.id]: true };
+      }
+
+      return prev;
+    });
+    setPlayerError(null);
     // Insert/replace at current index so the collection still flows
     setTracks((prev) => {
       const exists = prev.findIndex((x) => x.id === t.id);
