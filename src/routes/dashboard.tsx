@@ -835,6 +835,11 @@ function Dashboard() {
                 {playerError}
               </p>
             )}
+            {!hasSpotifySession && (
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                30-second preview — connect Spotify Premium for full tracks
+              </p>
+            )}
             {!canUseSpotifyPlayback && !track.previewUrl && (
               <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
                 No preview available — open it in Spotify to hear the full track
