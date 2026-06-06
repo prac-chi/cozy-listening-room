@@ -1144,7 +1144,7 @@ function FocusMode({
   controlsProps,
 }: {
   track: Track;
-  lyrics: string[];
+  lyrics: LyricLine[];
   lyricIdx: number;
   roomStyle: React.CSSProperties;
   onExit: () => void;
