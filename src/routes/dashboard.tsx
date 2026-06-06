@@ -36,7 +36,7 @@ import {
   type SpotifyTrack,
   type SpotifyWebPlaybackPlayer,
 } from "@/lib/spotify";
-import { fetchLyrics } from "@/lib/lyrics";
+import { fetchLyrics, type LyricLine } from "@/lib/lyrics";
 import { extractAccent } from "@/lib/color";
 
 export const Route = createFileRoute("/dashboard")({
