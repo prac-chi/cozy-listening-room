@@ -1043,6 +1043,10 @@ type ControlsProps = {
   onScrub: (s: number) => void;
   onVolume: (v: number) => void;
   onMute: () => void;
+  shuffle: boolean;
+  onShuffle: () => void;
+  repeat: "off" | "all" | "one";
+  onRepeat: () => void;
 };
 
 function Controls(p: ControlsProps) {
