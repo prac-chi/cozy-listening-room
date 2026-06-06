@@ -31,13 +31,13 @@ export const TRACKS: Track[] = [
     art: albumMain,
     duration: 264,
     accent: "oklch(0.82 0.17 35)", // amber
-    lyrics: [
+    lyrics: toLines([
       "Streetlights paint the road in honey gold",
       "The city lights reflecting on the dashboard",
       "Watching the neon signs drift slowly by",
       "Somewhere a saxophone is missing you",
       "Tonight the rain remembers every name",
-    ],
+    ]),
   },
   {
     id: "sunsets",
@@ -47,12 +47,12 @@ export const TRACKS: Track[] = [
     art: album1,
     duration: 211,
     accent: "oklch(0.78 0.18 10)", // rose
-    lyrics: [
+    lyrics: toLines([
       "Smoke curls like a question into the dusk",
       "You said love was a slow burning thing",
       "I'm learning how to let the evening stay",
       "Pink skies forgive the things we said",
-    ],
+    ]),
   },
   {
     id: "urban",
@@ -62,12 +62,12 @@ export const TRACKS: Track[] = [
     art: album2,
     duration: 248,
     accent: "oklch(0.72 0.18 280)", // indigo
-    lyrics: [
+    lyrics: toLines([
       "Carriage lights flicker on the windowpane",
       "The city sleeps in shades of indigo",
       "I count the stations like a lullaby",
       "Somewhere between the stops, I disappear",
-    ],
+    ]),
   },
   {
     id: "deepsea",
@@ -77,12 +77,12 @@ export const TRACKS: Track[] = [
     art: album3,
     duration: 305,
     accent: "oklch(0.7 0.18 235)", // ocean blue
-    lyrics: [
+    lyrics: toLines([
       "Bass notes drifting through the deep blue",
       "Trumpets singing where the daylight ends",
       "We sink like a slow, perfect chord",
       "And the tide hums in seven flats",
-    ],
+    ]),
   },
   {
     id: "plastic",
@@ -92,11 +92,11 @@ export const TRACKS: Track[] = [
     art: album4,
     duration: 232,
     accent: "oklch(0.8 0.18 55)", // orange
-    lyrics: [
+    lyrics: toLines([
       "Cassette tapes spinning in the August heat",
       "Palm trees swaying to a synth refrain",
       "We're plastic dreaming in a neon haze",
       "Summer ends but the song plays on",
-    ],
+    ]),
   },
 ];
