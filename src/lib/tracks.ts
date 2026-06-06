@@ -3,6 +3,7 @@ import album1 from "@/assets/album-1.jpg";
 import album2 from "@/assets/album-2.jpg";
 import album3 from "@/assets/album-3.jpg";
 import album4 from "@/assets/album-4.jpg";
+import type { LyricLine } from "@/lib/lyrics";
 
 export type Track = {
   id: string;
@@ -15,9 +16,11 @@ export type Track = {
   externalUrl?: string;
   /** oklch lightness/chroma/hue for the room accent */
   accent: string; // valid CSS color (oklch)
-  lyrics: string[];
+  lyrics: LyricLine[];
   previewUrl?: string | null;
 };
+
+const toLines = (arr: string[]): LyricLine[] => arr.map((text) => ({ time: null, text }));
 
 export const TRACKS: Track[] = [
   {
