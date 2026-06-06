@@ -36,7 +36,7 @@ import {
   type SpotifyTrack,
   type SpotifyWebPlaybackPlayer,
 } from "@/lib/spotify";
-import { fetchLyrics } from "@/lib/lyrics";
+import { fetchLyrics, type LyricLine } from "@/lib/lyrics";
 import { extractAccent } from "@/lib/color";
 
 export const Route = createFileRoute("/dashboard")({
@@ -68,7 +68,8 @@ const ACCENTS = [
   "oklch(0.78 0.18 355)",  // rose
 ];
 
-const NO_LYRICS = ["We don't have lyrics for this song."];
+const NO_LYRICS: LyricLine[] = [{ time: null, text: "We don't have lyrics for this song." }];
+const LOADING_LYRICS: LyricLine[] = [{ time: null, text: "Loading lyrics…" }];
 
 function spotifyToTrack(t: SpotifyTrack, i: number): Track {
   return {
@@ -91,8 +92,11 @@ function Dashboard() {
   const [trackIdx, setTrackIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [lyrics, setLyrics] = useState<string[]>(NO_LYRICS);
+  const [lyrics, setLyrics] = useState<LyricLine[]>(NO_LYRICS);
+  const [lyricsSynced, setLyricsSynced] = useState(false);
   const [lyricIdx, setLyricIdx] = useState(0);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState<"off" | "all" | "one">("off");
   const [clock, setClock] = useState("22:45");
   const [liked, setLiked] = useState(false);
   const [focus, setFocus] = useState(false);
@@ -230,10 +234,17 @@ function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     setLyricIdx(0);
-    setLyrics(["Loading lyrics…"]);
+    setLyrics(LOADING_LYRICS);
+    setLyricsSynced(false);
     fetchLyrics(track.artist, track.title).then((l) => {
       if (cancelled) return;
-      setLyrics(l && l.length ? l : NO_LYRICS);
+      if (l && l.lines.length) {
+        setLyrics(l.lines);
+        setLyricsSynced(l.synced);
+      } else {
+        setLyrics(NO_LYRICS);
+        setLyricsSynced(false);
+      }
     });
     return () => {
       cancelled = true;
@@ -350,7 +361,28 @@ function Dashboard() {
     setPlaying(false);
     setPlayerError("This preview could not be loaded.");
   };
-  const onEnded = () => setTrackIdx((i) => (i + 1) % tracks.length);
+  const pickNext = (dir: 1 | -1 = 1) => {
+    if (shuffle && tracks.length > 1) {
+      let n = trackIdx;
+      while (n === trackIdx) n = Math.floor(Math.random() * tracks.length);
+      return n;
+    }
+    return (trackIdx + dir + tracks.length) % tracks.length;
+  };
+  const onEnded = () => {
+    if (repeat === "one") {
+      const a = audioRef.current;
+      if (a) { a.currentTime = 0; a.play().catch(() => undefined); }
+      setProgress(0);
+      return;
+    }
+    const next = pickNext(1);
+    if (!shuffle && repeat === "off" && next === 0 && trackIdx === tracks.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    setTrackIdx(next);
+  };
   // Search
   useEffect(() => {
     if (!searchOpen) return;
@@ -531,14 +563,26 @@ function Dashboard() {
       return;
     }
 
+    if (lyricsSynced) {
+      // Synced lyrics: find the latest line whose timestamp <= progress
+      let idx = 0;
+      for (let i = 0; i < lyrics.length; i++) {
+        const t = lyrics[i].time;
+        if (t === null) continue;
+        if (t <= progress) idx = i;
+        else break;
+      }
+      setLyricIdx(idx);
+      return;
+    }
+
     const safeProgress = Math.max(0, Math.min(progress, duration));
     const nextIndex = Math.min(
       lyrics.length - 1,
       Math.floor((safeProgress / Math.max(1, duration)) * lyrics.length),
     );
-
     setLyricIdx(nextIndex);
-  }, [duration, lyrics.length, progress]);
+  }, [duration, lyrics, lyricsSynced, progress]);
 
   const onScrub = (s: number) => {
     setProgress(s);
@@ -560,14 +604,18 @@ function Dashboard() {
     muted,
     hasAudio: canUseSpotifyPlayback ? Boolean(track.uri && (playerReady || playerState?.deviceId)) : Boolean(track.previewUrl),
     onToggle: togglePlayback,
-    onPrev: () => setTrackIdx((i) => (i - 1 + tracks.length) % tracks.length),
-    onNext: () => setTrackIdx((i) => (i + 1) % tracks.length),
+    onPrev: () => setTrackIdx(pickNext(-1)),
+    onNext: () => setTrackIdx(pickNext(1)),
     onScrub,
     onVolume: (v: number) => {
       setVolume(v);
       if (v > 0) setMuted(false);
     },
     onMute: () => setMuted((m) => !m),
+    shuffle,
+    onShuffle: () => setShuffle((s) => !s),
+    repeat,
+    onRepeat: () => setRepeat((r) => (r === "off" ? "all" : r === "all" ? "one" : "off")),
   };
 
   useEffect(() => {
@@ -787,6 +835,11 @@ function Dashboard() {
                 {playerError}
               </p>
             )}
+            {!hasSpotifySession && (
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                30-second preview — connect Spotify Premium for full tracks
+              </p>
+            )}
             {!canUseSpotifyPlayback && !track.previewUrl && (
               <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
                 No preview available — open it in Spotify to hear the full track
@@ -805,16 +858,16 @@ function Dashboard() {
           <div className="mt-12 h-28 relative overflow-hidden w-full max-w-xl">
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
               <p className="text-muted-foreground/60 text-sm italic font-serif">
-                {lyrics[(lyricIdx - 1 + lyrics.length) % lyrics.length]}
+                {lyrics[(lyricIdx - 1 + lyrics.length) % lyrics.length]?.text}
               </p>
               <p
                 key={lyricIdx}
                 className="text-foreground text-lg md:text-xl font-serif transition-opacity duration-700"
               >
-                {lyrics[lyricIdx]}
+                {lyrics[lyricIdx]?.text}
               </p>
               <p className="text-muted-foreground/40 text-sm italic font-serif">
-                {lyrics[(lyricIdx + 1) % lyrics.length]}
+                {lyrics[(lyricIdx + 1) % lyrics.length]?.text}
               </p>
             </div>
           </div>
@@ -995,6 +1048,10 @@ type ControlsProps = {
   onScrub: (s: number) => void;
   onVolume: (v: number) => void;
   onMute: () => void;
+  shuffle: boolean;
+  onShuffle: () => void;
+  repeat: "off" | "all" | "one";
+  onRepeat: () => void;
 };
 
 function Controls(p: ControlsProps) {
@@ -1024,7 +1081,15 @@ function Controls(p: ControlsProps) {
       </div>
 
       <div className="mt-6 flex justify-between items-center px-2">
-        <button aria-label="Shuffle" className="text-muted-foreground hover:text-foreground transition-colors">
+        <button
+          aria-label="Shuffle"
+          aria-pressed={p.shuffle}
+          onClick={p.onShuffle}
+          className={[
+            "transition-colors",
+            p.shuffle ? "text-accent" : "text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+        >
           <Shuffle className="size-4" />
         </button>
         <div className="flex items-center gap-8">
@@ -1055,8 +1120,18 @@ function Controls(p: ControlsProps) {
             <SkipForward className="size-5" />
           </button>
         </div>
-        <button aria-label="Repeat" className="text-muted-foreground hover:text-foreground transition-colors">
+        <button
+          aria-label={`Repeat ${p.repeat}`}
+          onClick={p.onRepeat}
+          className={[
+            "relative transition-colors",
+            p.repeat !== "off" ? "text-accent" : "text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+        >
           <Repeat className="size-4" />
+          {p.repeat === "one" && (
+            <span className="absolute -top-1 -right-1 text-[8px] font-bold leading-none">1</span>
+          )}
         </button>
       </div>
 
@@ -1096,7 +1171,7 @@ function FocusMode({
   controlsProps,
 }: {
   track: Track;
-  lyrics: string[];
+  lyrics: LyricLine[];
   lyricIdx: number;
   roomStyle: React.CSSProperties;
   onExit: () => void;
@@ -1174,7 +1249,7 @@ function FocusMode({
                         : "text-muted-foreground/40 text-base italic",
                   ].join(" ")}
                 >
-                  {line}
+                  {line.text}
                 </p>
               );
             })}
