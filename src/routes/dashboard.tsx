@@ -92,8 +92,11 @@ function Dashboard() {
   const [trackIdx, setTrackIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [lyrics, setLyrics] = useState<string[]>(NO_LYRICS);
+  const [lyrics, setLyrics] = useState<LyricLine[]>(NO_LYRICS);
+  const [lyricsSynced, setLyricsSynced] = useState(false);
   const [lyricIdx, setLyricIdx] = useState(0);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState<"off" | "all" | "one">("off");
   const [clock, setClock] = useState("22:45");
   const [liked, setLiked] = useState(false);
   const [focus, setFocus] = useState(false);
