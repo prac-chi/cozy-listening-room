@@ -1222,7 +1222,7 @@ function FocusMode({
                         : "text-muted-foreground/40 text-base italic",
                   ].join(" ")}
                 >
-                  {line}
+                  {line.text}
                 </p>
               );
             })}
