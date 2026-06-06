@@ -68,7 +68,8 @@ const ACCENTS = [
   "oklch(0.78 0.18 355)",  // rose
 ];
 
-const NO_LYRICS = ["We don't have lyrics for this song."];
+const NO_LYRICS: LyricLine[] = [{ time: null, text: "We don't have lyrics for this song." }];
+const LOADING_LYRICS: LyricLine[] = [{ time: null, text: "Loading lyrics…" }];
 
 function spotifyToTrack(t: SpotifyTrack, i: number): Track {
   return {
