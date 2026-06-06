@@ -234,10 +234,17 @@ function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     setLyricIdx(0);
-    setLyrics(["Loading lyrics…"]);
+    setLyrics(LOADING_LYRICS);
+    setLyricsSynced(false);
     fetchLyrics(track.artist, track.title).then((l) => {
       if (cancelled) return;
-      setLyrics(l && l.length ? l : NO_LYRICS);
+      if (l && l.lines.length) {
+        setLyrics(l.lines);
+        setLyricsSynced(l.synced);
+      } else {
+        setLyrics(NO_LYRICS);
+        setLyricsSynced(false);
+      }
     });
     return () => {
       cancelled = true;
