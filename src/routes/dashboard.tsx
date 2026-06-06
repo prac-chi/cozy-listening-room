@@ -1115,8 +1115,18 @@ function Controls(p: ControlsProps) {
             <SkipForward className="size-5" />
           </button>
         </div>
-        <button aria-label="Repeat" className="text-muted-foreground hover:text-foreground transition-colors">
+        <button
+          aria-label={`Repeat ${p.repeat}`}
+          onClick={p.onRepeat}
+          className={[
+            "relative transition-colors",
+            p.repeat !== "off" ? "text-accent" : "text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+        >
           <Repeat className="size-4" />
+          {p.repeat === "one" && (
+            <span className="absolute -top-1 -right-1 text-[8px] font-bold leading-none">1</span>
+          )}
         </button>
       </div>
 
