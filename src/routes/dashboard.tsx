@@ -1076,7 +1076,15 @@ function Controls(p: ControlsProps) {
       </div>
 
       <div className="mt-6 flex justify-between items-center px-2">
-        <button aria-label="Shuffle" className="text-muted-foreground hover:text-foreground transition-colors">
+        <button
+          aria-label="Shuffle"
+          aria-pressed={p.shuffle}
+          onClick={p.onShuffle}
+          className={[
+            "transition-colors",
+            p.shuffle ? "text-accent" : "text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+        >
           <Shuffle className="size-4" />
         </button>
         <div className="flex items-center gap-8">
