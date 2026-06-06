@@ -853,16 +853,16 @@ function Dashboard() {
           <div className="mt-12 h-28 relative overflow-hidden w-full max-w-xl">
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
               <p className="text-muted-foreground/60 text-sm italic font-serif">
-                {lyrics[(lyricIdx - 1 + lyrics.length) % lyrics.length]}
+                {lyrics[(lyricIdx - 1 + lyrics.length) % lyrics.length]?.text}
               </p>
               <p
                 key={lyricIdx}
                 className="text-foreground text-lg md:text-xl font-serif transition-opacity duration-700"
               >
-                {lyrics[lyricIdx]}
+                {lyrics[lyricIdx]?.text}
               </p>
               <p className="text-muted-foreground/40 text-sm italic font-serif">
-                {lyrics[(lyricIdx + 1) % lyrics.length]}
+                {lyrics[(lyricIdx + 1) % lyrics.length]?.text}
               </p>
             </div>
           </div>
