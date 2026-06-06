@@ -542,14 +542,26 @@ function Dashboard() {
       return;
     }
 
+    if (lyricsSynced) {
+      // Synced lyrics: find the latest line whose timestamp <= progress
+      let idx = 0;
+      for (let i = 0; i < lyrics.length; i++) {
+        const t = lyrics[i].time;
+        if (t === null) continue;
+        if (t <= progress) idx = i;
+        else break;
+      }
+      setLyricIdx(idx);
+      return;
+    }
+
     const safeProgress = Math.max(0, Math.min(progress, duration));
     const nextIndex = Math.min(
       lyrics.length - 1,
       Math.floor((safeProgress / Math.max(1, duration)) * lyrics.length),
     );
-
     setLyricIdx(nextIndex);
-  }, [duration, lyrics.length, progress]);
+  }, [duration, lyrics, lyricsSynced, progress]);
 
   const onScrub = (s: number) => {
     setProgress(s);
