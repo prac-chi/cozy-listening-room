@@ -33,7 +33,7 @@ import {
   logoutSpotify,
   playTrackOnDevice,
   searchCatalog,
-  searchTracks,
+  startPlaybackOnDevice,
   transferPlayback,
   type SpotifyAlbum,
   type SpotifyProfile,
@@ -191,7 +191,7 @@ function Dashboard() {
   }, [connected]);
 
   useEffect(() => {
-    if (!hasSpotifySession) return;
+    if (!connected) return;
     let cancelled = false;
 
     (async () => {
@@ -242,7 +242,7 @@ function Dashboard() {
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
     };
-  }, [hasSpotifySession, volume]);
+  }, [connected, volume]);
 
   useEffect(() => {
     if (!hasSpotifySession) return;
@@ -403,12 +403,49 @@ function Dashboard() {
     }
     setTrackIdx(next);
   };
+
+  const loadTrackCollection = (items: Track[], label: string) => {
+    if (!items.length) return;
+    setTracks(items);
+    setTrackIdx(0);
+    setProgress(0);
+    setPlaying(false);
+    setPlayerError(null);
+    setActiveCollectionLabel(label);
+  };
+
+  const loadAlbum = async (album: SpotifyAlbum) => {
+    try {
+      setCollectionError(null);
+      const { tracks: albumTracks } = await getAlbumTracks(album.id);
+      loadTrackCollection(albumTracks.map(spotifyToTrack), album.name);
+      setSearchOpen(false);
+      setSearchQ("");
+    } catch (error) {
+      setCollectionError(error instanceof Error ? error.message : "Could not open this album.");
+    }
+  };
+
+  const loadPlaylist = async (playlist: SpotifyPlaylist) => {
+    try {
+      setCollectionError(null);
+      const { tracks: playlistTracks } = await getPlaylistTracks(playlist.id);
+      loadTrackCollection(playlistTracks.map(spotifyToTrack), playlist.name);
+      setSearchOpen(false);
+      setSearchQ("");
+    } catch (error) {
+      setCollectionError(error instanceof Error ? error.message : "Could not open this playlist.");
+    }
+  };
+
   // Search
   useEffect(() => {
     if (!searchOpen) return;
     const q = searchQ.trim();
     if (!q) {
       setSearchResults([]);
+      setSearchAlbums([]);
+      setSearchPlaylists([]);
       setSearchError(null);
       setSearching(false);
       return;
@@ -417,11 +454,15 @@ function Dashboard() {
     setSearchError(null);
     const id = setTimeout(async () => {
       try {
-        const r = await searchTracks(q, 12, profile?.country);
+        const r = await searchCatalog(q, 8, profile?.country);
         setSearchResults(r.tracks.items.map(spotifyToTrack));
+        setSearchAlbums(r.albums?.items ?? []);
+        setSearchPlaylists(r.playlists?.items ?? []);
       } catch (e) {
         console.error("Search failed", e);
         setSearchResults([]);
+        setSearchAlbums([]);
+        setSearchPlaylists([]);
         const message = e instanceof Error ? e.message : "";
         if (/Not authenticated|Spotify 401/i.test(message)) {
           setSearchError("Your Spotify session expired. Please connect Spotify again.");
@@ -490,12 +531,7 @@ function Dashboard() {
 
     pendingSpotifyTrackRef.current = trackUri;
     // Only transfer if not active
-    const transferPromise = playerState?.isActive 
-      ? Promise.resolve() 
-      : transferPlayback(deviceId, false);
-
-    transferPromise
-      .then(() => playTrackOnDevice(deviceId, trackUri))
+    startPlaybackOnDevice(deviceId, trackUri)
       .catch((error) => {
         pendingSpotifyTrackRef.current = null;
         const message = error instanceof Error ? error.message : "Could not start Spotify playback.";
