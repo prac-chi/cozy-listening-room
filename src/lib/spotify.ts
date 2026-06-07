@@ -701,3 +701,26 @@ export async function playTrackOnDevice(deviceId: string, uri: string) {
     throw new Error(`Spotify play failed (${res.status}): ${txt}`);
   }
 }
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function startPlaybackOnDevice(deviceId: string, uri: string) {
+  await transferPlayback(deviceId, true);
+  await delay(350);
+
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await playTrackOnDevice(deviceId, uri);
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(350 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Spotify play failed.");
+}
