@@ -31,10 +31,8 @@ import {
   isSpotifyConnected,
   lookupTrackPreview,
   logoutSpotify,
-  playTrackOnDevice,
   searchCatalog,
   startPlaybackOnDevice,
-  transferPlayback,
   type SpotifyAlbum,
   type SpotifyProfile,
   type SpotifyPlaylist,
@@ -135,7 +133,7 @@ function Dashboard() {
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeTrackRef = useRef(track);
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
-  const isPremiumAccount = (profile?.product?.toLowerCase() === "premium") || playerState?.isPremium === true;
+  const isPremiumAccount = profile?.product?.toLowerCase() === "premium";
   const hasSpotifySession = connected && isPremiumAccount;
   const forcePreviewForCurrentTrack = Boolean(forcePreviewByTrackId[track.id]);
 
@@ -564,12 +562,8 @@ function Dashboard() {
 
         pendingSpotifyTrackRef.current = track.uri;
         
-        if (!playerState?.isActive) {
-          await transferPlayback(deviceId, false);
-        }
-
         if (!isSameTrack) {
-          await playTrackOnDevice(deviceId, track.uri);
+          await startPlaybackOnDevice(deviceId, track.uri);
           setPlaying(true);
           setProgress(0);
           return;
