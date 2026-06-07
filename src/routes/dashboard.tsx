@@ -22,16 +22,22 @@ import polaroidRain from "@/assets/polaroid-rain.jpg";
 import {
   beginSpotifyLogin,
   createSpotifyPlayback,
+  getAlbumTracks,
   getFallbackTracks,
+  getMyPlaylists,
   getProfile,
+  getPlaylistTracks,
   getTopTracks,
   isSpotifyConnected,
   lookupTrackPreview,
   logoutSpotify,
   playTrackOnDevice,
+  searchCatalog,
   searchTracks,
   transferPlayback,
+  type SpotifyAlbum,
   type SpotifyProfile,
+  type SpotifyPlaylist,
   type SpotifyPlayerState,
   type SpotifyTrack,
   type SpotifyWebPlaybackPlayer,
@@ -108,8 +114,13 @@ function Dashboard() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [searchResults, setSearchResults] = useState<Track[]>([]);
+  const [searchAlbums, setSearchAlbums] = useState<SpotifyAlbum[]>([]);
+  const [searchPlaylists, setSearchPlaylists] = useState<SpotifyPlaylist[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [collectionError, setCollectionError] = useState<string | null>(null);
+  const [libraryPlaylists, setLibraryPlaylists] = useState<SpotifyPlaylist[]>([]);
+  const [activeCollectionLabel, setActiveCollectionLabel] = useState<string | null>(null);
   const [playerState, setPlayerState] = useState<SpotifyPlayerState | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
@@ -124,7 +135,8 @@ function Dashboard() {
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeTrackRef = useRef(track);
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
-  const hasSpotifySession = connected && profile?.product === "premium";
+  const isPremiumAccount = (profile?.product?.toLowerCase() === "premium") || playerState?.isPremium === true;
+  const hasSpotifySession = connected && isPremiumAccount;
   const forcePreviewForCurrentTrack = Boolean(forcePreviewByTrackId[track.id]);
 
   const enablePreviewFallback = (target: Track, message?: string) => {
@@ -144,12 +156,14 @@ function Dashboard() {
     setConnected(true);
     (async () => {
       try {
-        const [p, top] = await Promise.all([getProfile(), getTopTracks(12)]);
+        const [p, top, playlists] = await Promise.all([getProfile(), getTopTracks(12), getMyPlaylists(10)]);
         setProfile(p);
+        setLibraryPlaylists(playlists.items ?? []);
         if (top.items.length) {
           setTracks(top.items.map(spotifyToTrack));
           setTrackIdx(0);
           setProgress(0);
+          setActiveCollectionLabel("Top Tracks");
         }
       } catch (e) {
         console.error("Spotify load failed", e);
@@ -229,6 +243,12 @@ function Dashboard() {
       spotifyPlayerRef.current = null;
     };
   }, [hasSpotifySession, volume]);
+
+  useEffect(() => {
+    if (!hasSpotifySession) return;
+    setForcePreviewByTrackId({});
+    setPlayerError(null);
+  }, [hasSpotifySession]);
 
   // Real lyrics fetch on track change
   useEffect(() => {
