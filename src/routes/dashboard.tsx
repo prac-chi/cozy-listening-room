@@ -22,16 +22,20 @@ import polaroidRain from "@/assets/polaroid-rain.jpg";
 import {
   beginSpotifyLogin,
   createSpotifyPlayback,
+  getAlbumTracks,
   getFallbackTracks,
+  getMyPlaylists,
   getProfile,
+  getPlaylistTracks,
   getTopTracks,
   isSpotifyConnected,
   lookupTrackPreview,
   logoutSpotify,
-  playTrackOnDevice,
-  searchTracks,
-  transferPlayback,
+  searchCatalog,
+  startPlaybackOnDevice,
+  type SpotifyAlbum,
   type SpotifyProfile,
+  type SpotifyPlaylist,
   type SpotifyPlayerState,
   type SpotifyTrack,
   type SpotifyWebPlaybackPlayer,
@@ -108,8 +112,13 @@ function Dashboard() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [searchResults, setSearchResults] = useState<Track[]>([]);
+  const [searchAlbums, setSearchAlbums] = useState<SpotifyAlbum[]>([]);
+  const [searchPlaylists, setSearchPlaylists] = useState<SpotifyPlaylist[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [collectionError, setCollectionError] = useState<string | null>(null);
+  const [libraryPlaylists, setLibraryPlaylists] = useState<SpotifyPlaylist[]>([]);
+  const [activeCollectionLabel, setActiveCollectionLabel] = useState<string | null>(null);
   const [playerState, setPlayerState] = useState<SpotifyPlayerState | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
@@ -124,7 +133,8 @@ function Dashboard() {
   const track: Track = tracks[trackIdx] ?? TRACKS[0];
   const activeTrackRef = useRef(track);
   const activeMood = useMemo(() => MOODS.find((m) => m.id === mood)!, [mood]);
-  const hasSpotifySession = connected && profile?.product === "premium";
+  const isPremiumAccount = profile?.product?.toLowerCase() === "premium";
+  const hasSpotifySession = connected && isPremiumAccount;
   const forcePreviewForCurrentTrack = Boolean(forcePreviewByTrackId[track.id]);
 
   const enablePreviewFallback = (target: Track, message?: string) => {
@@ -144,12 +154,14 @@ function Dashboard() {
     setConnected(true);
     (async () => {
       try {
-        const [p, top] = await Promise.all([getProfile(), getTopTracks(12)]);
+        const [p, top, playlists] = await Promise.all([getProfile(), getTopTracks(12), getMyPlaylists(10)]);
         setProfile(p);
+        setLibraryPlaylists(playlists.items ?? []);
         if (top.items.length) {
           setTracks(top.items.map(spotifyToTrack));
           setTrackIdx(0);
           setProgress(0);
+          setActiveCollectionLabel("Top Tracks");
         }
       } catch (e) {
         console.error("Spotify load failed", e);
@@ -177,7 +189,7 @@ function Dashboard() {
   }, [connected]);
 
   useEffect(() => {
-    if (!hasSpotifySession) return;
+    if (!connected) return;
     let cancelled = false;
 
     (async () => {
@@ -228,7 +240,13 @@ function Dashboard() {
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
     };
-  }, [hasSpotifySession, volume]);
+  }, [connected, volume]);
+
+  useEffect(() => {
+    if (!hasSpotifySession) return;
+    setForcePreviewByTrackId({});
+    setPlayerError(null);
+  }, [hasSpotifySession]);
 
   // Real lyrics fetch on track change
   useEffect(() => {
@@ -383,12 +401,49 @@ function Dashboard() {
     }
     setTrackIdx(next);
   };
+
+  const loadTrackCollection = (items: Track[], label: string) => {
+    if (!items.length) return;
+    setTracks(items);
+    setTrackIdx(0);
+    setProgress(0);
+    setPlaying(false);
+    setPlayerError(null);
+    setActiveCollectionLabel(label);
+  };
+
+  const loadAlbum = async (album: SpotifyAlbum) => {
+    try {
+      setCollectionError(null);
+      const { tracks: albumTracks } = await getAlbumTracks(album.id);
+      loadTrackCollection(albumTracks.map(spotifyToTrack), album.name);
+      setSearchOpen(false);
+      setSearchQ("");
+    } catch (error) {
+      setCollectionError(error instanceof Error ? error.message : "Could not open this album.");
+    }
+  };
+
+  const loadPlaylist = async (playlist: SpotifyPlaylist) => {
+    try {
+      setCollectionError(null);
+      const { tracks: playlistTracks } = await getPlaylistTracks(playlist.id);
+      loadTrackCollection(playlistTracks.map(spotifyToTrack), playlist.name);
+      setSearchOpen(false);
+      setSearchQ("");
+    } catch (error) {
+      setCollectionError(error instanceof Error ? error.message : "Could not open this playlist.");
+    }
+  };
+
   // Search
   useEffect(() => {
     if (!searchOpen) return;
     const q = searchQ.trim();
     if (!q) {
       setSearchResults([]);
+      setSearchAlbums([]);
+      setSearchPlaylists([]);
       setSearchError(null);
       setSearching(false);
       return;
@@ -397,11 +452,15 @@ function Dashboard() {
     setSearchError(null);
     const id = setTimeout(async () => {
       try {
-        const r = await searchTracks(q, 12, profile?.country);
+        const r = await searchCatalog(q, 8, profile?.country);
         setSearchResults(r.tracks.items.map(spotifyToTrack));
+        setSearchAlbums(r.albums?.items ?? []);
+        setSearchPlaylists(r.playlists?.items ?? []);
       } catch (e) {
         console.error("Search failed", e);
         setSearchResults([]);
+        setSearchAlbums([]);
+        setSearchPlaylists([]);
         const message = e instanceof Error ? e.message : "";
         if (/Not authenticated|Spotify 401/i.test(message)) {
           setSearchError("Your Spotify session expired. Please connect Spotify again.");
@@ -470,12 +529,7 @@ function Dashboard() {
 
     pendingSpotifyTrackRef.current = trackUri;
     // Only transfer if not active
-    const transferPromise = playerState?.isActive 
-      ? Promise.resolve() 
-      : transferPlayback(deviceId, false);
-
-    transferPromise
-      .then(() => playTrackOnDevice(deviceId, trackUri))
+    startPlaybackOnDevice(deviceId, trackUri)
       .catch((error) => {
         pendingSpotifyTrackRef.current = null;
         const message = error instanceof Error ? error.message : "Could not start Spotify playback.";
@@ -508,12 +562,8 @@ function Dashboard() {
 
         pendingSpotifyTrackRef.current = track.uri;
         
-        if (!playerState?.isActive) {
-          await transferPlayback(deviceId, false);
-        }
-
         if (!isSameTrack) {
-          await playTrackOnDevice(deviceId, track.uri);
+          await startPlaybackOnDevice(deviceId, track.uri);
           setPlaying(true);
           setProgress(0);
           return;
@@ -841,6 +891,11 @@ function Dashboard() {
             <p className="text-muted-foreground text-base md:text-lg">
               {track.artist} — <span className="italic">{track.album}</span>
             </p>
+            {activeCollectionLabel && (
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                {activeCollectionLabel}
+              </p>
+            )}
             {playerError && (
               <p className="text-[10px] uppercase tracking-[0.2em] text-destructive/80">
                 {playerError}
@@ -856,7 +911,7 @@ function Dashboard() {
                 No preview available — open it in Spotify to hear the full track
               </p>
             )}
-            {canUseSpotifyPlayback && profile?.product === "premium" && (
+            {canUseSpotifyPlayback && isPremiumAccount && (
               <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
                 Playing through your Spotify Premium session
               </p>
@@ -918,7 +973,9 @@ function Dashboard() {
 
               <div className="relative bg-card/60 p-5 rounded-lg ring-1 ring-border rotate-1">
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-muted/40 backdrop-blur-sm border-x border-border" />
-                <h4 className="text-sm font-medium text-foreground mb-3 font-serif">Late Shift Essentials</h4>
+                <h4 className="text-sm font-medium text-foreground mb-3 font-serif">
+                  {activeCollectionLabel ?? "Late Shift Essentials"}
+                </h4>
                 <ul className="text-xs text-muted-foreground space-y-2">
                   {tracks.slice(0, 4).map((t) => (
                     <li key={t.id} className="flex items-center gap-2">
@@ -935,6 +992,9 @@ function Dashboard() {
 
           <div>
             <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">Collection</h3>
+            {collectionError && (
+              <p className="mb-3 text-xs text-destructive break-words">{collectionError}</p>
+            )}
             <div className="flex gap-4 overflow-x-auto pb-3 no-scrollbar">
               {tracks.map((t, i) => {
                 const active = i === trackIdx;
@@ -1013,8 +1073,28 @@ function Dashboard() {
               {!searching && searchError && (
                 <p className="text-xs text-destructive px-2 py-3 break-words">{searchError}</p>
               )}
-              {!searching && !searchError && searchResults.length === 0 && searchQ && (
+              {!searching && !searchError && searchResults.length === 0 && searchAlbums.length === 0 && searchPlaylists.length === 0 && searchQ && (
                 <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title, artist, or a shorter search.</p>
+              )}
+              {!searching && !searchError && connected && libraryPlaylists.length > 0 && !searchQ && (
+                <div className="space-y-2 pb-3">
+                  <p className="px-2 pt-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Your playlists</p>
+                  {libraryPlaylists.slice(0, 8).map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      onClick={() => loadPlaylist(playlist)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 text-left"
+                    >
+                      <img src={playlist.images[0]?.url ?? track.art} alt="" className="size-12 rounded object-cover" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{playlist.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {playlist.owner?.display_name ?? "Spotify"} · {playlist.tracks?.total ?? 0} tracks
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               )}
               {searchResults.map((t) => (
                 <button
@@ -1036,6 +1116,46 @@ function Dashboard() {
                   )}
                 </button>
               ))}
+              {!searching && searchAlbums.length > 0 && (
+                <div className="space-y-1 pt-3">
+                  <p className="px-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Albums</p>
+                  {searchAlbums.map((album) => (
+                    <button
+                      key={album.id}
+                      onClick={() => loadAlbum(album)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 text-left"
+                    >
+                      <img src={album.images[0]?.url ?? track.art} alt="" className="size-12 rounded object-cover" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{album.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {album.artists.map((artist) => artist.name).join(", ")}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!searching && searchPlaylists.length > 0 && (
+                <div className="space-y-1 pt-3">
+                  <p className="px-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Playlists</p>
+                  {searchPlaylists.map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      onClick={() => loadPlaylist(playlist)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 text-left"
+                    >
+                      <img src={playlist.images[0]?.url ?? track.art} alt="" className="size-12 rounded object-cover" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{playlist.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {playlist.owner?.display_name ?? "Spotify"} · {playlist.tracks?.total ?? 0} tracks
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

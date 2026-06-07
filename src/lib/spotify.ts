@@ -12,6 +12,7 @@ const SCOPES = [
   "user-read-recently-played",
   "user-top-read",
   "playlist-read-private",
+  "playlist-read-collaborative",
   "streaming",
 ].join(" ");
 
@@ -217,6 +218,29 @@ export type SpotifyTrack = {
   external_urls?: { spotify?: string };
 };
 
+export type SpotifyAlbum = {
+  id: string;
+  name: string;
+  uri: string;
+  album_type?: string;
+  total_tracks?: number;
+  release_date?: string;
+  artists: { name: string }[];
+  images: { url: string; width?: number; height?: number }[];
+  external_urls?: { spotify?: string };
+};
+
+export type SpotifyPlaylist = {
+  id: string;
+  name: string;
+  uri: string;
+  description?: string;
+  images: { url: string; width?: number; height?: number }[];
+  owner?: { display_name?: string };
+  tracks?: { total: number };
+  external_urls?: { spotify?: string };
+};
+
 type ItunesSong = {
   trackId?: number;
   trackName?: string;
@@ -405,6 +429,93 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
   return lastResult ?? { tracks: { items: [] } };
 }
 
+export async function searchCatalog(q: string, limit = 12, market?: string) {
+  const query = q.replace(/\s+/g, " ").trim();
+  if (query.length < 2) {
+    return {
+      tracks: { items: [] as SpotifyTrack[] },
+      albums: { items: [] as SpotifyAlbum[] },
+      playlists: { items: [] as SpotifyPlaylist[] },
+    };
+  }
+
+  if (!isSpotifyConnected()) {
+    return {
+      tracks: { items: await searchItunesTracks(query, limit) },
+      albums: { items: [] as SpotifyAlbum[] },
+      playlists: { items: [] as SpotifyPlaylist[] },
+    };
+  }
+
+  const normalizedMarket = market?.trim().toUpperCase();
+  const validMarket = normalizedMarket && /^[A-Z]{2}$/.test(normalizedMarket)
+    ? normalizedMarket
+    : null;
+  const params = new URLSearchParams({
+    type: "track,album,playlist",
+    limit: String(Math.min(50, Math.max(1, Math.floor(limit)))),
+    q: query,
+  });
+
+  if (validMarket) params.set("market", validMarket);
+
+  return spotifyFetch<{
+    tracks: { items: SpotifyTrack[] };
+    albums: { items: SpotifyAlbum[] };
+    playlists: { items: SpotifyPlaylist[] };
+  }>(`/search?${params.toString()}`);
+}
+
+export const getMyPlaylists = (limit = 12) =>
+  spotifyFetch<{ items: SpotifyPlaylist[] }>(`/me/playlists?limit=${limit}`);
+
+export async function getAlbumTracks(albumId: string) {
+  const album = await spotifyFetch<SpotifyAlbum & {
+    tracks: {
+      items: Array<{
+        id: string;
+        name: string;
+        uri: string;
+        duration_ms: number;
+        preview_url: string | null;
+        artists: { name: string }[];
+        external_urls?: { spotify?: string };
+      }>;
+    };
+  }>(`/albums/${encodeURIComponent(albumId)}`);
+
+  const tracks: SpotifyTrack[] = (album.tracks?.items ?? []).map((item) => ({
+    id: item.id,
+    name: item.name,
+    uri: item.uri,
+    duration_ms: item.duration_ms,
+    preview_url: item.preview_url,
+    artists: item.artists,
+    album: { name: album.name, images: album.images.map((image) => ({
+      url: image.url,
+      width: image.width ?? 0,
+      height: image.height ?? 0,
+    })) },
+    external_urls: item.external_urls,
+  }));
+
+  return { album, tracks };
+}
+
+export async function getPlaylistTracks(playlistId: string) {
+  const playlist = await spotifyFetch<SpotifyPlaylist & {
+    tracks: {
+      items: Array<{ track: SpotifyTrack | null }>;
+    };
+  }>(`/playlists/${encodeURIComponent(playlistId)}`);
+
+  const tracks = (playlist.tracks?.items ?? [])
+    .map((item) => item.track)
+    .filter((track): track is SpotifyTrack => Boolean(track?.id));
+
+  return { playlist, tracks };
+}
+
 export type SpotifyPlayerState = {
   deviceId: string | null;
   isReady: boolean;
@@ -589,4 +700,27 @@ export async function playTrackOnDevice(deviceId: string, uri: string) {
     const txt = await res.text();
     throw new Error(`Spotify play failed (${res.status}): ${txt}`);
   }
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function startPlaybackOnDevice(deviceId: string, uri: string) {
+  await transferPlayback(deviceId, true);
+  await delay(350);
+
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await playTrackOnDevice(deviceId, uri);
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(350 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Spotify play failed.");
 }
