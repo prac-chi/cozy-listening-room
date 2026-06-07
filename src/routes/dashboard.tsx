@@ -891,6 +891,11 @@ function Dashboard() {
             <p className="text-muted-foreground text-base md:text-lg">
               {track.artist} — <span className="italic">{track.album}</span>
             </p>
+            {activeCollectionLabel && (
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                {activeCollectionLabel}
+              </p>
+            )}
             {playerError && (
               <p className="text-[10px] uppercase tracking-[0.2em] text-destructive/80">
                 {playerError}
@@ -906,7 +911,7 @@ function Dashboard() {
                 No preview available — open it in Spotify to hear the full track
               </p>
             )}
-            {canUseSpotifyPlayback && profile?.product === "premium" && (
+            {canUseSpotifyPlayback && isPremiumAccount && (
               <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
                 Playing through your Spotify Premium session
               </p>
@@ -968,7 +973,9 @@ function Dashboard() {
 
               <div className="relative bg-card/60 p-5 rounded-lg ring-1 ring-border rotate-1">
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-muted/40 backdrop-blur-sm border-x border-border" />
-                <h4 className="text-sm font-medium text-foreground mb-3 font-serif">Late Shift Essentials</h4>
+                <h4 className="text-sm font-medium text-foreground mb-3 font-serif">
+                  {activeCollectionLabel ?? "Late Shift Essentials"}
+                </h4>
                 <ul className="text-xs text-muted-foreground space-y-2">
                   {tracks.slice(0, 4).map((t) => (
                     <li key={t.id} className="flex items-center gap-2">
@@ -985,6 +992,9 @@ function Dashboard() {
 
           <div>
             <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">Collection</h3>
+            {collectionError && (
+              <p className="mb-3 text-xs text-destructive break-words">{collectionError}</p>
+            )}
             <div className="flex gap-4 overflow-x-auto pb-3 no-scrollbar">
               {tracks.map((t, i) => {
                 const active = i === trackIdx;
@@ -1063,8 +1073,28 @@ function Dashboard() {
               {!searching && searchError && (
                 <p className="text-xs text-destructive px-2 py-3 break-words">{searchError}</p>
               )}
-              {!searching && !searchError && searchResults.length === 0 && searchQ && (
+              {!searching && !searchError && searchResults.length === 0 && searchAlbums.length === 0 && searchPlaylists.length === 0 && searchQ && (
                 <p className="text-xs text-muted-foreground px-2 py-3">Nothing found. Try the exact song title, artist, or a shorter search.</p>
+              )}
+              {!searching && !searchError && connected && libraryPlaylists.length > 0 && !searchQ && (
+                <div className="space-y-2 pb-3">
+                  <p className="px-2 pt-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Your playlists</p>
+                  {libraryPlaylists.slice(0, 8).map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      onClick={() => loadPlaylist(playlist)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 text-left"
+                    >
+                      <img src={playlist.images[0]?.url ?? track.art} alt="" className="size-12 rounded object-cover" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{playlist.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {playlist.owner?.display_name ?? "Spotify"} · {playlist.tracks?.total ?? 0} tracks
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               )}
               {searchResults.map((t) => (
                 <button
@@ -1086,6 +1116,46 @@ function Dashboard() {
                   )}
                 </button>
               ))}
+              {!searching && searchAlbums.length > 0 && (
+                <div className="space-y-1 pt-3">
+                  <p className="px-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Albums</p>
+                  {searchAlbums.map((album) => (
+                    <button
+                      key={album.id}
+                      onClick={() => loadAlbum(album)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 text-left"
+                    >
+                      <img src={album.images[0]?.url ?? track.art} alt="" className="size-12 rounded object-cover" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{album.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {album.artists.map((artist) => artist.name).join(", ")}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!searching && searchPlaylists.length > 0 && (
+                <div className="space-y-1 pt-3">
+                  <p className="px-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Playlists</p>
+                  {searchPlaylists.map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      onClick={() => loadPlaylist(playlist)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 text-left"
+                    >
+                      <img src={playlist.images[0]?.url ?? track.art} alt="" className="size-12 rounded object-cover" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{playlist.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {playlist.owner?.display_name ?? "Spotify"} · {playlist.tracks?.total ?? 0} tracks
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
