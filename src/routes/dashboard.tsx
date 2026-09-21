@@ -223,7 +223,7 @@ function Dashboard() {
           if (isMatchingTrack) {
             setProgress(Math.max(0, Math.floor(nextPositionMs / 1000)));
           }
-        }, volume);
+        }, volumeRef.current);
 
         await player.activateElement?.();
 
@@ -240,7 +240,10 @@ function Dashboard() {
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
     };
-  }, [connected, volume]);
+    // The player must be created once per connection — recreating it mid-song
+    // causes the play/pause glitching, so volume is applied through a separate effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
 
   useEffect(() => {
     if (!hasSpotifySession) return;
