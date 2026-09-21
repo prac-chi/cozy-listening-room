@@ -1040,6 +1040,55 @@ function Dashboard() {
             </div>
           </div>
 
+          <div className="mb-10">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">My Albums</h3>
+              <button
+                onClick={createAlbum}
+                className="text-[10px] uppercase tracking-[0.18em] text-accent hover:text-foreground transition-colors"
+              >
+                + New album
+              </button>
+            </div>
+            {albumNotice && <p className="mb-3 text-xs text-muted-foreground">{albumNotice}</p>}
+            {myAlbums.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Make your own album — it starts with whatever is playing right now.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {myAlbums.map((album) => (
+                  <li
+                    key={album.id}
+                    className="flex items-center gap-3 bg-card/50 ring-1 ring-border rounded-lg px-3 py-2"
+                  >
+                    <button
+                      onClick={() => loadTrackCollection(album.tracks, album.name)}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <p className="text-sm text-foreground truncate">{album.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{album.tracks.length} songs</p>
+                    </button>
+                    <button
+                      onClick={() => addCurrentTrackToAlbum(album.id)}
+                      className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-accent"
+                    >
+                      + Add
+                    </button>
+                    <button
+                      onClick={() => deleteAlbum(album.id)}
+                      aria-label={`Delete ${album.name}`}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+
           <div>
             <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">Collection</h3>
             {collectionError && (
