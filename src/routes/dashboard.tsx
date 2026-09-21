@@ -125,7 +125,11 @@ function Dashboard() {
   const [liveAccent, setLiveAccent] = useState<string | null>(null);
   const [forcePreviewByTrackId, setForcePreviewByTrackId] = useState<Record<string, true>>({});
 
+  const [myAlbums, setMyAlbums] = useState<{ id: string; name: string; tracks: Track[] }[]>([]);
+  const [albumNotice, setAlbumNotice] = useState<string | null>(null);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const volumeRef = useRef(0.7);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const spotifyDeviceIdRef = useRef<string | null>(null);
   const pendingSpotifyTrackRef = useRef<string | null>(null);
@@ -223,7 +227,7 @@ function Dashboard() {
           if (isMatchingTrack) {
             setProgress(Math.max(0, Math.floor(nextPositionMs / 1000)));
           }
-        }, volume);
+        }, volumeRef.current);
 
         await player.activateElement?.();
 
@@ -240,7 +244,10 @@ function Dashboard() {
       spotifyPlayerRef.current?.disconnect();
       spotifyPlayerRef.current = null;
     };
-  }, [connected, volume]);
+    // The player must be created once per connection — recreating it mid-song
+    // causes the play/pause glitching, so volume is applied through a separate effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
 
   useEffect(() => {
     if (!hasSpotifySession) return;
@@ -334,10 +341,53 @@ function Dashboard() {
 
   // Volume sync
   useEffect(() => {
+    volumeRef.current = muted ? 0 : volume;
     const a = audioRef.current;
     if (!a) return;
     a.volume = muted ? 0 : volume;
   }, [volume, muted]);
+
+  // Custom albums the listener builds inside echo.room
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("echo_room_albums");
+      if (raw) setMyAlbums(JSON.parse(raw));
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, []);
+
+  const persistAlbums = (next: { id: string; name: string; tracks: Track[] }[]) => {
+    setMyAlbums(next);
+    try {
+      localStorage.setItem("echo_room_albums", JSON.stringify(next));
+    } catch {
+      /* storage full or blocked */
+    }
+  };
+
+  const createAlbum = () => {
+    const name = window.prompt("Name your album", "Late Night Mix")?.trim();
+    if (!name) return;
+    persistAlbums([...myAlbums, { id: `album-${Date.now()}`, name, tracks: [track] }]);
+    setAlbumNotice(`Created “${name}” with ${track.title}.`);
+  };
+
+  const addCurrentTrackToAlbum = (albumId: string) => {
+    const next = myAlbums.map((album) => {
+      if (album.id !== albumId) return album;
+      if (album.tracks.some((t) => t.id === track.id)) return album;
+      return { ...album, tracks: [...album.tracks, track] };
+    });
+    persistAlbums(next);
+    const album = next.find((a) => a.id === albumId);
+    setAlbumNotice(`Saved ${track.title} to “${album?.name}”.`);
+  };
+
+  const deleteAlbum = (albumId: string) => {
+    persistAlbums(myAlbums.filter((album) => album.id !== albumId));
+    setAlbumNotice(null);
+  };
 
   useEffect(() => {
     if (!hasSpotifySession) return;
@@ -989,6 +1039,55 @@ function Dashboard() {
               </div>
             </div>
           </div>
+
+          <div className="mb-10">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">My Albums</h3>
+              <button
+                onClick={createAlbum}
+                className="text-[10px] uppercase tracking-[0.18em] text-accent hover:text-foreground transition-colors"
+              >
+                + New album
+              </button>
+            </div>
+            {albumNotice && <p className="mb-3 text-xs text-muted-foreground">{albumNotice}</p>}
+            {myAlbums.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Make your own album — it starts with whatever is playing right now.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {myAlbums.map((album) => (
+                  <li
+                    key={album.id}
+                    className="flex items-center gap-3 bg-card/50 ring-1 ring-border rounded-lg px-3 py-2"
+                  >
+                    <button
+                      onClick={() => loadTrackCollection(album.tracks, album.name)}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <p className="text-sm text-foreground truncate">{album.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{album.tracks.length} songs</p>
+                    </button>
+                    <button
+                      onClick={() => addCurrentTrackToAlbum(album.id)}
+                      className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-accent"
+                    >
+                      + Add
+                    </button>
+                    <button
+                      onClick={() => deleteAlbum(album.id)}
+                      aria-label={`Delete ${album.name}`}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
 
           <div>
             <h3 className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">Collection</h3>

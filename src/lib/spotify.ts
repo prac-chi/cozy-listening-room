@@ -431,39 +431,67 @@ export async function searchTracks(q: string, limit = 20, market?: string) {
 
 export async function searchCatalog(q: string, limit = 12, market?: string) {
   const query = q.replace(/\s+/g, " ").trim();
-  if (query.length < 2) {
-    return {
-      tracks: { items: [] as SpotifyTrack[] },
-      albums: { items: [] as SpotifyAlbum[] },
-      playlists: { items: [] as SpotifyPlaylist[] },
-    };
-  }
+  const empty = {
+    tracks: { items: [] as SpotifyTrack[] },
+    albums: { items: [] as SpotifyAlbum[] },
+    playlists: { items: [] as SpotifyPlaylist[] },
+  };
+  if (query.length < 2) return empty;
 
-  if (!isSpotifyConnected()) {
-    return {
-      tracks: { items: await searchItunesTracks(query, limit) },
-      albums: { items: [] as SpotifyAlbum[] },
-      playlists: { items: [] as SpotifyPlaylist[] },
-    };
-  }
+  const safeLimit = Math.min(50, Math.max(1, Math.floor(limit)));
+
+  const itunesOnly = async () => ({
+    ...empty,
+    tracks: { items: await searchItunesTracks(query, safeLimit) },
+  });
+
+  if (!isSpotifyConnected()) return itunesOnly();
 
   const normalizedMarket = market?.trim().toUpperCase();
   const validMarket = normalizedMarket && /^[A-Z]{2}$/.test(normalizedMarket)
     ? normalizedMarket
     : null;
-  const params = new URLSearchParams({
-    type: "track,album,playlist",
-    limit: String(Math.min(50, Math.max(1, Math.floor(limit)))),
-    q: query,
-  });
 
-  if (validMarket) params.set("market", validMarket);
+  const simplifiedQuery = query
+    .replace(/[^\p{L}\p{N}\s'&-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const queryVariants = Array.from(new Set([query, simplifiedQuery].filter(Boolean)));
 
-  return spotifyFetch<{
-    tracks: { items: SpotifyTrack[] };
-    albums: { items: SpotifyAlbum[] };
-    playlists: { items: SpotifyPlaylist[] };
-  }>(`/search?${params.toString()}`);
+  const attempts: string[] = [];
+  for (const value of queryVariants) {
+    for (const withMarket of validMarket ? [true, false] : [false]) {
+      const params = new URLSearchParams({
+        type: "track,album,playlist",
+        limit: String(safeLimit),
+        q: value,
+      });
+      if (withMarket && validMarket) params.set("market", validMarket);
+      attempts.push(`/search?${params.toString()}`);
+    }
+  }
+
+  for (const path of attempts) {
+    try {
+      const result = await spotifyFetch<{
+        tracks?: { items?: (SpotifyTrack | null)[] };
+        albums?: { items?: (SpotifyAlbum | null)[] };
+        playlists?: { items?: (SpotifyPlaylist | null)[] };
+      }>(path);
+
+      const tracks = (result.tracks?.items ?? []).filter((x): x is SpotifyTrack => Boolean(x?.id));
+      const albums = (result.albums?.items ?? []).filter((x): x is SpotifyAlbum => Boolean(x?.id));
+      const playlists = (result.playlists?.items ?? []).filter((x): x is SpotifyPlaylist => Boolean(x?.id));
+
+      if (tracks.length || albums.length || playlists.length) {
+        return { tracks: { items: tracks }, albums: { items: albums }, playlists: { items: playlists } };
+      }
+    } catch {
+      // try the next variant, then fall back to iTunes below
+    }
+  }
+
+  return itunesOnly();
 }
 
 export const getMyPlaylists = (limit = 12) =>
