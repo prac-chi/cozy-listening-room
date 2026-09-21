@@ -341,10 +341,53 @@ function Dashboard() {
 
   // Volume sync
   useEffect(() => {
+    volumeRef.current = muted ? 0 : volume;
     const a = audioRef.current;
     if (!a) return;
     a.volume = muted ? 0 : volume;
   }, [volume, muted]);
+
+  // Custom albums the listener builds inside echo.room
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("echo_room_albums");
+      if (raw) setMyAlbums(JSON.parse(raw));
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, []);
+
+  const persistAlbums = (next: { id: string; name: string; tracks: Track[] }[]) => {
+    setMyAlbums(next);
+    try {
+      localStorage.setItem("echo_room_albums", JSON.stringify(next));
+    } catch {
+      /* storage full or blocked */
+    }
+  };
+
+  const createAlbum = () => {
+    const name = window.prompt("Name your album", "Late Night Mix")?.trim();
+    if (!name) return;
+    persistAlbums([...myAlbums, { id: `album-${Date.now()}`, name, tracks: [track] }]);
+    setAlbumNotice(`Created “${name}” with ${track.title}.`);
+  };
+
+  const addCurrentTrackToAlbum = (albumId: string) => {
+    const next = myAlbums.map((album) => {
+      if (album.id !== albumId) return album;
+      if (album.tracks.some((t) => t.id === track.id)) return album;
+      return { ...album, tracks: [...album.tracks, track] };
+    });
+    persistAlbums(next);
+    const album = next.find((a) => a.id === albumId);
+    setAlbumNotice(`Saved ${track.title} to “${album?.name}”.`);
+  };
+
+  const deleteAlbum = (albumId: string) => {
+    persistAlbums(myAlbums.filter((album) => album.id !== albumId));
+    setAlbumNotice(null);
+  };
 
   useEffect(() => {
     if (!hasSpotifySession) return;
