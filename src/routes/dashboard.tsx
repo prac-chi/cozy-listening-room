@@ -125,7 +125,11 @@ function Dashboard() {
   const [liveAccent, setLiveAccent] = useState<string | null>(null);
   const [forcePreviewByTrackId, setForcePreviewByTrackId] = useState<Record<string, true>>({});
 
+  const [myAlbums, setMyAlbums] = useState<{ id: string; name: string; tracks: Track[] }[]>([]);
+  const [albumNotice, setAlbumNotice] = useState<string | null>(null);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const volumeRef = useRef(0.7);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const spotifyDeviceIdRef = useRef<string | null>(null);
   const pendingSpotifyTrackRef = useRef<string | null>(null);
